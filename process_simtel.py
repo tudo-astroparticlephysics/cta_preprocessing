@@ -67,7 +67,7 @@ def main(input_files, output_file, n_events, n_jobs):
     '''
 
     if os.path.exists(output_file):
-        click.confirm(f'File {output_file} exists. Overwrite?', default=False, abort=True)
+        click.confirm('File {} exists. Overwrite?'.format(output_file), default=False, abort=True)
         os.remove(output_file)
 
     if n_jobs > 1:
@@ -79,7 +79,7 @@ def main(input_files, output_file, n_events, n_jobs):
             fact.io.write_data(telescope_events, output_file, key='telescope_events', mode='a')
     else:
         for input_file in input_files:
-            print(f'processing file {input_file}')
+            print('processing file {}'.format(input_file))
             runs, array_events, telescope_events = process_file(input_file, n_events)
             fact.io.write_data(runs, output_file, key='runs', mode='a')
             fact.io.write_data(array_events, output_file, key='array_events', mode='a')
@@ -142,7 +142,7 @@ def verify_file(input_file_path):
     array_events = fact.io.read_data(input_file_path, key='array_events')
     array_events.set_index(['run_id', 'array_event_id'], drop=True, verify_integrity=True, inplace=True)
 
-    print(f'Processed {len(runs)} runs, {len(telescope_events)} single telescope events and {len(array_events)} array events.')
+    print('Processed {} runs, {} single telescope events and {} array events.'.format(len(runs), len(telescope_events), len(array_events)))
 
 
 def read_simtel_mc_information(simtel_file):
