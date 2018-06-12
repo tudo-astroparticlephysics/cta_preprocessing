@@ -213,7 +213,13 @@ def process_event(event, reco):
 
         telescope_type_name = event.inst.subarray.tels[telescope_id].optics.tel_type
         boundary_thresh, picture_thresh, min_number_picture_neighbors = cleaning_level[camera.cam_id]
-        mask = tailcuts_clean(camera, dl1.image[0], boundary_thresh=boundary_thresh, picture_thresh=picture_thresh, min_number_picture_neighbors=min_number_picture_neighbors)
+        mask = tailcuts_clean(
+            camera,
+            dl1.image[0],
+            boundary_thresh=boundary_thresh,
+            picture_thresh=picture_thresh,
+            min_number_picture_neighbors=min_number_picture_neighbors
+        )
 
         h = hillas_parameters(
             camera[mask],
@@ -225,9 +231,10 @@ def process_event(event, reco):
         params[telescope_id] = moments
 
         pointing_azimuth[telescope_id] = event.mc.tel[telescope_id].azimuth_raw * u.rad
-        pointing_altitude[telescope_id] = ((np.pi / 2) - event.mc.tel[telescope_id].altitude_raw) * u.rad   # TODO srsly now? FFS
+        pointing_altitude[telescope_id] = event.mc.tel[telescope_id].altitude_raw * u.rad
 
         telescope_description = event.inst.subarray.tel[telescope_id]
+
         d = {
             'array_event_id': event.dl0.event_id,
             'telescope_id': int(telescope_id),
@@ -245,7 +252,7 @@ def process_event(event, reco):
         d.update(h.as_dict())
         features[telescope_id] = ({k: strip_unit(v) for k, v in d.items()})
 
-    reconstruction = reco.predict(params, event.inst, pointing_azimuth, pointing_altitude)
+    reconstruction = reco.predict(params, event.inst, pointing_altitude, pointing_azimuth)
     for telescope_id in event.dl1.tel.keys():
         camera = event.inst.subarray.tels[telescope_id].camera
         if camera.cam_id not in allowed_cameras:
