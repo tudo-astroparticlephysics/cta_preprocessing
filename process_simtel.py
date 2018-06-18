@@ -76,6 +76,10 @@ def main(input_files, output_file, n_events, n_jobs, reco_algorithm):
         results = Parallel(n_jobs=n_jobs, verbose=5)(delayed(process_file)(f, reco_algorithm=reco_algorithm, n_events=n_events, silent=True,) for f in input_files)
         for r in results:
             runs, array_events, telescope_events = r
+
+            if runs is None or array_events is None or telescope_events is None:
+                continue
+
             fact.io.write_data(runs, output_file, key='runs', mode='a')
             fact.io.write_data(array_events, output_file, key='array_events', mode='a')
             fact.io.write_data(telescope_events, output_file, key='telescope_events', mode='a')
@@ -83,6 +87,11 @@ def main(input_files, output_file, n_events, n_jobs, reco_algorithm):
         for input_file in input_files:
             print('processing file {}'.format(input_file))
             runs, array_events, telescope_events = process_file(input_file, reco_algorithm=reco_algorithm, n_events=n_events)
+
+            if runs is None or array_events is None or telescope_events is None:
+                print('file contained no information.')
+                continue
+
             fact.io.write_data(runs, output_file, key='runs', mode='a')
             fact.io.write_data(array_events, output_file, key='array_events', mode='a')
             fact.io.write_data(telescope_events, output_file, key='telescope_events', mode='a')
@@ -116,6 +125,9 @@ def process_file(input_file, reco_algorithm, n_events=-1, silent=False):
                 telescope_event_information.append(image_features)
         except HillasParameterizationError:
             continue  # no signal in event or whatever kind of shit can happen here.
+
+    if (len(telescope_event_information) == 0):
+        return None, None, None
 
     telescope_events = pd.concat(telescope_event_information)
     telescope_events.set_index(['run_id', 'array_event_id', 'telescope_id'], drop=True, verify_integrity=True, inplace=True)
