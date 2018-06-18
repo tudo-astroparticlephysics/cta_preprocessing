@@ -2,7 +2,7 @@ from ctapipe.io.eventsourcefactory import EventSourceFactory
 from ctapipe.calib import CameraCalibrator
 from ctapipe.image.hillas import hillas_parameters, HillasParameterizationError
 from ctapipe.image.cleaning import tailcuts_clean
-from ctapipe.reco import HillasReconstructor
+from ctapipe.reco import HillasReconstructor, HillasIntersection
 from joblib import Parallel, delayed
 
 import pandas as pd
@@ -14,6 +14,7 @@ import numpy as np
 from collections import namedtuple, Counter
 from tqdm import tqdm
 import astropy.units as u
+from astropy.coordinates import SkyCoord
 
 # do some horrible things to silence warnings in ctapipe
 import warnings
@@ -56,7 +57,8 @@ SubMomentParameters = namedtuple('SubMomentParameters', 'size,cen_x,cen_y,length
     ))
 @click.option('-n', '--n_events', default=-1, help='number of events to process in each file.')
 @click.option('-j', '--n_jobs', default=1, help='number of jobs to start. this is usefull when passing more than one simtel file.')
-def main(input_files, output_file, n_events, n_jobs):
+@click.option('-r', '--reco_algorithm', default='planes', type=click.Choice(['intersection', 'planes']), help='Reco Algorithm to use')
+def main(input_files, output_file, n_events, n_jobs, reco_algorithm):
     '''
     process multiple simtel files gievn as INPUT_FILES into one hdf5 file saved in OUTPUT_FILE.
     The hdf5 file will contain three groups. 'runs', 'array_events', 'telescope_events'.
@@ -71,7 +73,7 @@ def main(input_files, output_file, n_events, n_jobs):
         os.remove(output_file)
 
     if n_jobs > 1:
-        results = Parallel(n_jobs=n_jobs, verbose=5)(delayed(process_file)(f, n_events, silent=True) for f in input_files)
+        results = Parallel(n_jobs=n_jobs, verbose=5)(delayed(process_file)(f, reco_algorithm=reco_algorithm, n_events=n_events, silent=True,) for f in input_files)
         for r in results:
             runs, array_events, telescope_events = r
             fact.io.write_data(runs, output_file, key='runs', mode='a')
@@ -80,7 +82,7 @@ def main(input_files, output_file, n_events, n_jobs):
     else:
         for input_file in input_files:
             print('processing file {}'.format(input_file))
-            runs, array_events, telescope_events = process_file(input_file, n_events)
+            runs, array_events, telescope_events = process_file(input_file, reco_algorithm=reco_algorithm, n_events=n_events)
             fact.io.write_data(runs, output_file, key='runs', mode='a')
             fact.io.write_data(array_events, output_file, key='array_events', mode='a')
             fact.io.write_data(telescope_events, output_file, key='telescope_events', mode='a')
@@ -88,7 +90,7 @@ def main(input_files, output_file, n_events, n_jobs):
     verify_file(output_file)
 
 
-def process_file(input_file, n_events=-1, silent=False):
+def process_file(input_file, reco_algorithm, n_events=-1, silent=False):
     event_source = EventSourceFactory.produce(
         input_url=input_file,
         max_events=n_events if n_events > 1 else None,
@@ -97,7 +99,6 @@ def process_file(input_file, n_events=-1, silent=False):
     calibrator = CameraCalibrator(
         eventsource=event_source,
     )
-    reco = HillasReconstructor()
 
 
     telescope_event_information = []
@@ -108,12 +109,12 @@ def process_file(input_file, n_events=-1, silent=False):
 
         calibrator.calibrate(event)
         try:
-            image_features, reconstruction = process_event(event, reco)
+            image_features, reconstruction = process_event(event, reco_algorithm=reco_algorithm)
             if len(image_features) > 1:  # check whtehr at least two telescopes returned hillas features
                 event_features = event_information(event, image_features, reconstruction)
                 array_event_information.append(event_features)
                 telescope_event_information.append(image_features)
-        except (NameError, HillasParameterizationError):
+        except HillasParameterizationError:
             continue  # no signal in event or whatever kind of shit can happen here.
 
     telescope_events = pd.concat(telescope_event_information)
@@ -167,6 +168,7 @@ def read_simtel_mc_information(simtel_file):
             'mc_min_azimuth': f.get_mc_az_range_Min(),
         }
 
+
         return d
 
 
@@ -177,6 +179,7 @@ def event_information(event, image_features, reconstruction):
         'mc_az': event.mc.az,
         'mc_core_x': event.mc.core_x,
         'mc_core_y': event.mc.core_y,
+        'mc_x_max': event.mc.x_max.to(u.g / u.cm**2).value,
         'num_triggered_telescopes': number_of_valid_triggerd_cameras(event),
         'mc_height_first_interaction': event.mc.h_first_int,
         'mc_energy': event.mc.energy.to('TeV').value,
@@ -197,7 +200,7 @@ def event_information(event, image_features, reconstruction):
     return {k: strip_unit(v) for k, v in d.items()}
 
 
-def process_event(event, reco):
+def process_event(event, reco_algorithm):
     '''
     Processes
     '''
@@ -206,6 +209,9 @@ def process_event(event, reco):
     params = {}
     pointing_azimuth = {}
     pointing_altitude = {}
+    tel_x = {}
+    tel_y = {}
+    tel_focal_lengths = {}
     for telescope_id, dl1 in event.dl1.tel.items():
         camera = event.inst.subarray.tels[telescope_id].camera
         if camera.cam_id not in allowed_cameras:
@@ -232,8 +238,11 @@ def process_event(event, reco):
 
         pointing_azimuth[telescope_id] = event.mc.tel[telescope_id].azimuth_raw * u.rad
         pointing_altitude[telescope_id] = event.mc.tel[telescope_id].altitude_raw * u.rad
+        tel_x[telescope_id] = event.inst.subarray.positions[telescope_id][0]
+        tel_y[telescope_id] = event.inst.subarray.positions[telescope_id][1]
 
         telescope_description = event.inst.subarray.tel[telescope_id]
+        tel_focal_lengths[telescope_id] = telescope_description.optics.equivalent_focal_length
 
         d = {
             'array_event_id': event.dl0.event_id,
@@ -252,7 +261,17 @@ def process_event(event, reco):
         d.update(h.as_dict())
         features[telescope_id] = ({k: strip_unit(v) for k, v in d.items()})
 
-    reconstruction = reco.predict(params, event.inst, pointing_altitude, pointing_azimuth)
+    if reco_algorithm == 'intersection':
+        reco = HillasIntersection()
+        array_direction = SkyCoord(alt=event.mcheader.run_array_direction[1], az=event.mcheader.run_array_direction[0], frame='altaz')
+        reconstruction = reco.predict(params, tel_x, tel_y, tel_focal_lengths, array_direction)
+
+
+    elif reco_algorithm == 'planes':
+        reco = HillasReconstructor()
+        reco.estimate_h_max = lambda a, b, c, d: np.nan
+        reconstruction = reco.predict(params, event.inst, pointing_altitude, pointing_azimuth)
+
     for telescope_id in event.dl1.tel.keys():
         camera = event.inst.subarray.tels[telescope_id].camera
         if camera.cam_id not in allowed_cameras:
