@@ -1,6 +1,6 @@
 from ctapipe.io.eventsourcefactory import EventSourceFactory
 from ctapipe.calib import CameraCalibrator
-from ctapipe.image.hillas import hillas_parameters, HillasParameterizationError
+from ctapipe.image.hillas import hillas_parameters_5, HillasParameterizationError
 from ctapipe.image.cleaning import tailcuts_clean
 from ctapipe.reco import HillasReconstructor, HillasIntersection
 from joblib import Parallel, delayed
@@ -30,19 +30,16 @@ allowed_cameras = ['LSTCam', 'NectarCam', 'DigiCam']
 
 
 cleaning_level = {
-                    'ASTRICam': (5, 7, 0),  # (5, 10)?
-                    'FlashCam': (12, 15, 0),
-                    'LSTCam': (5, 10, 2),  # ?? (3, 6) for Abelardo...
-                    # ASWG Zeuthen talk by Abelardo Moralejo:
-                    'NectarCam': (4, 8, 0),
-                    # "FlashCam": (4, 8),  # there is some scaling missing?
-                    'DigiCam': (3, 6, 0),
-                    'CHEC': (2, 4, 0),
-                    'SCTCam': (1.5, 3, 0)
-                    }
-
-# needed for directional reconstructor
-SubMomentParameters = namedtuple('SubMomentParameters', 'size,cen_x,cen_y,length,width,psi')
+    'ASTRICam': (5, 7, 4),  # (5, 10)?
+    'FlashCam': (12, 15, 4),
+    'LSTCam': (5, 10, 4),  # ?? (3, 6) for Abelardo...
+    # ASWG Zeuthen talk by Abelardo Moralejo:
+    'NectarCam': (4, 8, 4),
+    # "FlashCam": (4, 8),  # there is some scaling missing?
+    'DigiCam': (3, 6, 4),
+    'CHEC': (2, 4, 4),
+    'SCTCam': (1.5, 3, 4)
+}
 
 
 @click.command()
@@ -239,14 +236,12 @@ def process_event(event, reco_algorithm):
             min_number_picture_neighbors=min_number_picture_neighbors
         )
 
-        h = hillas_parameters(
+        h = hillas_parameters_5(
             camera[mask],
             dl1.image[0, mask],
-            container=True
         )
 
-        moments = SubMomentParameters(size=h.intensity, cen_x=h.x, cen_y=h.y, length=h.length, width=h.width, psi=h.psi)
-        params[telescope_id] = moments
+        params[telescope_id] = h
 
         pointing_azimuth[telescope_id] = event.mc.tel[telescope_id].azimuth_raw * u.rad
         pointing_altitude[telescope_id] = event.mc.tel[telescope_id].altitude_raw * u.rad
