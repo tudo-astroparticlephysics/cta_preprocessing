@@ -30,15 +30,15 @@ allowed_cameras = ['LSTCam', 'NectarCam', 'DigiCam']
 
 
 cleaning_level = {
-    'ASTRICam': (5, 7, 4),  # (5, 10)?
-    'FlashCam': (12, 15, 4),
-    'LSTCam': (5, 10, 4),  # ?? (3, 6) for Abelardo...
+    # 'ASTRICam': (5, 7, 2),  # (5, 10)?
+    # 'FlashCam': (12, 15, 2),
+    'LSTCam': (3.5, 7.5, 2),  # ?? (3, 6) for Abelardo...
     # ASWG Zeuthen talk by Abelardo Moralejo:
-    'NectarCam': (4, 8, 4),
+    'NectarCam': (3, 5.5, 2),
     # "FlashCam": (4, 8),  # there is some scaling missing?
-    'DigiCam': (3, 6, 4),
-    'CHEC': (2, 4, 4),
-    'SCTCam': (1.5, 3, 4)
+    'DigiCam': (2, 4.5, 2),
+    # 'CHEC': (2, 4, 2),
+    # 'SCTCam': (1.5, 3, 2)
 }
 
 
@@ -115,7 +115,7 @@ def process_file(input_file, reco_algorithm, n_events=-1, silent=False):
 
         calibrator.calibrate(event)
         try:
-            image_features, reconstruction = process_event(event, reco_algorithm=reco_algorithm)
+            image_features, reconstruction, _, _ = process_event(event, reco_algorithm=reco_algorithm)
             if len(image_features) > 1:  # check whtehr at least two telescopes returned hillas features
                 event_features = event_information(event, image_features, reconstruction)
                 array_event_information.append(event_features)
@@ -209,13 +209,14 @@ def event_information(event, image_features, reconstruction):
     return {k: strip_unit(v) for k, v in d.items()}
 
 
-def process_event(event, reco_algorithm):
+def process_event(event, reco_algorithm='planes'):
     '''
     Processes
     '''
 
     features = {}
     params = {}
+    cleaning_mask = {}
     pointing_azimuth = {}
     pointing_altitude = {}
     tel_x = {}
@@ -235,13 +236,15 @@ def process_event(event, reco_algorithm):
             picture_thresh=picture_thresh,
             min_number_picture_neighbors=min_number_picture_neighbors
         )
-
-        h = hillas_parameters_5(
-            camera[mask],
-            dl1.image[0, mask],
-        )
-
-        params[telescope_id] = h
+        cleaning_mask[telescope_id] = mask
+        try:
+            h = hillas_parameters_5(
+                camera[mask],
+                dl1.image[0, mask],
+            )
+            params[telescope_id] = h
+        except HillasParameterizationError:
+            continue
 
         pointing_azimuth[telescope_id] = event.mc.tel[telescope_id].azimuth_raw * u.rad
         pointing_altitude[telescope_id] = event.mc.tel[telescope_id].altitude_raw * u.rad
@@ -280,6 +283,8 @@ def process_event(event, reco_algorithm):
         reconstruction = reco.predict(params, event.inst, pointing_altitude, pointing_azimuth)
 
     for telescope_id in event.dl1.tel.keys():
+        if telescope_id not in params:
+            continue
         camera = event.inst.subarray.tels[telescope_id].camera
         if camera.cam_id not in allowed_cameras:
             continue
@@ -291,7 +296,7 @@ def process_event(event, reco_algorithm):
         d = np.sqrt((core_x - x)**2 + (core_y - y)**2)
         features[telescope_id]['distance_to_core'] = d.value
 
-    return pd.DataFrame(list(features.values())), reconstruction
+    return pd.DataFrame(list(features.values())), reconstruction, params, cleaning_mask
 
 
 
