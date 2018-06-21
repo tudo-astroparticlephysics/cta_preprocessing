@@ -3,6 +3,8 @@ from ctapipe.calib import CameraCalibrator
 from ctapipe.image.hillas import hillas_parameters_5, HillasParameterizationError
 from ctapipe.image.cleaning import tailcuts_clean
 from ctapipe.reco import HillasReconstructor, HillasIntersection
+from ctapipe.reco.HillasReconstructor import TooFewTelescopesException
+
 from joblib import Parallel, delayed
 
 import pandas as pd
@@ -11,7 +13,7 @@ import click
 import os
 import pyhessio
 import numpy as np
-from collections import namedtuple, Counter
+from collections import Counter
 from tqdm import tqdm
 import astropy.units as u
 from astropy.coordinates import SkyCoord
@@ -115,13 +117,12 @@ def process_file(input_file, reco_algorithm, n_events=-1, silent=False):
 
         calibrator.calibrate(event)
         try:
-            image_features, reconstruction, _, _ = process_event(event, reco_algorithm=reco_algorithm)
-            if len(image_features) > 1:  # check whtehr at least two telescopes returned hillas features
-                event_features = event_information(event, image_features, reconstruction)
-                array_event_information.append(event_features)
-                telescope_event_information.append(image_features)
-        except HillasParameterizationError:
-            continue  # no signal in event or whatever kind of shit can happen here.
+            image_features, reconstruction, _, _ = process_event(event)
+            event_features = event_information(event, image_features, reconstruction)
+            array_event_information.append(event_features)
+            telescope_event_information.append(image_features)
+        except TooFewTelescopesException:
+            continue
 
     if (len(telescope_event_information) == 0):
         return None, None, None
