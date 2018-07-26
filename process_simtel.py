@@ -117,7 +117,7 @@ def process_file(input_file, reco_algorithm, n_events=-1, silent=False):
 
         calibrator.calibrate(event)
         try:
-            image_features, reconstruction, _, _ = process_event(event)
+            image_features, reconstruction, _, _ = process_event(event, reco_algorithm=reco_algorithm)
             event_features = event_information(event, image_features, reconstruction)
             array_event_information.append(event_features)
             telescope_event_information.append(image_features)
@@ -271,16 +271,12 @@ def process_event(event, reco_algorithm='planes'):
 
         d.update(h.as_dict())
         features[telescope_id] = ({k: strip_unit(v) for k, v in d.items()})
-
     if reco_algorithm == 'intersection':
         reco = HillasIntersection()
         array_direction = SkyCoord(alt=event.mcheader.run_array_direction[1], az=event.mcheader.run_array_direction[0], frame='altaz')
         reconstruction = reco.predict(params, tel_x, tel_y, tel_focal_lengths, array_direction)
-
-
     elif reco_algorithm == 'planes':
         reco = HillasReconstructor()
-        reco.estimate_h_max = lambda a, b, c, d: np.nan
         reconstruction = reco.predict(params, event.inst, pointing_altitude, pointing_azimuth)
 
     for telescope_id in event.dl1.tel.keys():
