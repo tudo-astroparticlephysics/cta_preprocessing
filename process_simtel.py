@@ -72,7 +72,7 @@ def main(input_files, output_file, n_events, n_jobs, reco_algorithm):
         os.remove(output_file)
 
     if n_jobs > 1:
-        results = Parallel(n_jobs=n_jobs, verbose=5)(delayed(process_file)(f, reco_algorithm=reco_algorithm, n_events=n_events, silent=True,) for f in input_files)
+        results = Parallel(n_jobs=n_jobs, verbose=50)(delayed(process_file)(f, reco_algorithm=reco_algorithm, n_events=n_events, silent=True,) for f in input_files)
         for r in results:
             runs, array_events, telescope_events = r
 
