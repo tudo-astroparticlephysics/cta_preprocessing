@@ -17,7 +17,7 @@ from collections import Counter
 from tqdm import tqdm
 import astropy.units as u
 from astropy.coordinates import SkyCoord
-
+import glob
 # do some horrible things to silence warnings in ctapipe
 import warnings
 from astropy.utils.exceptions import AstropyDeprecationWarning
@@ -46,10 +46,10 @@ cleaning_level = {
 
 @click.command()
 @click.argument(
-    'input_files', type=click.Path(
+    'input_folder', type=click.Path(
         exists=True,
-        dir_okay=False,
-    ), nargs=-1)
+        dir_okay=True,
+    ))
 @click.argument(
     'output_file', type=click.Path(
         dir_okay=False,
@@ -57,7 +57,7 @@ cleaning_level = {
 @click.option('-n', '--n_events', default=-1, help='number of events to process in each file.')
 @click.option('-j', '--n_jobs', default=1, help='number of jobs to start. this is usefull when passing more than one simtel file.')
 @click.option('-r', '--reco_algorithm', default='planes', type=click.Choice(['intersection', 'planes']), help='Reco Algorithm to use')
-def main(input_files, output_file, n_events, n_jobs, reco_algorithm):
+def main(input_folder, output_file, n_events, n_jobs, reco_algorithm):
     '''
     process multiple simtel files gievn as INPUT_FILES into one hdf5 file saved in OUTPUT_FILE.
     The hdf5 file will contain three groups. 'runs', 'array_events', 'telescope_events'.
@@ -70,7 +70,8 @@ def main(input_files, output_file, n_events, n_jobs, reco_algorithm):
     if os.path.exists(output_file):
         click.confirm('File {} exists. Overwrite?'.format(output_file), default=False, abort=True)
         os.remove(output_file)
-
+    input_files = glob.glob(f'{input_folder}*.simtel.gz')
+    print(f'Found {len(input_files)} files.')
     if n_jobs > 1:
         results = Parallel(n_jobs=n_jobs, verbose=50)(delayed(process_file)(f, reco_algorithm=reco_algorithm, n_events=n_events, silent=True,) for f in input_files)
         for r in results:
