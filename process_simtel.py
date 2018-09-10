@@ -76,7 +76,7 @@ def main(input_folder, output_folder, n_events, n_jobs, reco_algorithm):
         return
 
     if n_jobs > 1:
-        chunksize = 2
+        chunksize = 50
         n_chunks = (len(input_files) // chunksize) + 1
         chunks = np.array_split(input_files, n_chunks)
         with Parallel(n_jobs=n_jobs, verbose=50) as parallel:
@@ -150,15 +150,15 @@ def process_file(input_file, reco_algorithm, n_events=-1, silent=False, return_i
             continue
 
     if (len(telescope_event_information) == 0):
+        if return_input_file:
+            return None, None, None, None
         return None, None, None
 
     telescope_events = pd.concat(telescope_event_information)
     telescope_events.set_index(['run_id', 'array_event_id', 'telescope_id'], drop=True, verify_integrity=True, inplace=True)
 
-
     array_events = pd.DataFrame(array_event_information)
     array_events.set_index(['run_id', 'array_event_id'], drop=True, verify_integrity=True, inplace=True)
-
 
     run_information = read_simtel_mc_information(input_file)
     df_runs = pd.DataFrame([run_information])
