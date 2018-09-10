@@ -1,7 +1,7 @@
 from ctapipe.io.eventsourcefactory import EventSourceFactory
 from ctapipe.calib import CameraCalibrator
 from ctapipe.image.hillas import hillas_parameters_5, HillasParameterizationError
-from ctapipe.image import leakage
+# from ctapipe.image import leakage
 from ctapipe.image.cleaning import tailcuts_clean
 from ctapipe.reco import HillasReconstructor
 from ctapipe.reco.HillasReconstructor import TooFewTelescopesException
@@ -18,6 +18,7 @@ from tqdm import tqdm
 import astropy.units as u
 from astropy.coordinates import SkyCoord
 import glob
+import os
 # do some horrible things to silence warnings in ctapipe
 import warnings
 from astropy.utils.exceptions import AstropyDeprecationWarning
@@ -87,7 +88,10 @@ def main(input_folder, output_folder, n_events, n_jobs, reco_algorithm):
                     if runs is None or array_events is None or telescope_events is None:
                         continue
 
-                    output_file = input_file.replace('.simtel.gz', '.hdf5')
+
+                    basename = os.path.basename(input_file)
+                    output_file = os.path.join(output_folder, basename.replace('.simtel.gz', '.hdf5'))
+
                     print(f'processed file {input_file}, writing to {output_file}')
 
                     fact.io.write_data(runs, output_file, key='runs', mode='w')
@@ -97,8 +101,8 @@ def main(input_folder, output_folder, n_events, n_jobs, reco_algorithm):
                     verify_file(output_file)
 
     else:
-
-        output_files = [f.replace('.simtel.gz', '.hdf5') for f in input_files]
+        basenames = map(os.path.basename, input_files)
+        output_files = [os.path.join(output_folder, f.replace('.simtel.gz', '.hdf5')) for f in basenames]
 
         for input_file, output_file in tqdm(zip(input_files, output_files)):
             print(f'processing file {input_file}, writing to {output_file}')
@@ -125,6 +129,8 @@ def process_file(input_file, reco_algorithm, n_events=-1, silent=False, return_i
     )
     calibrator = CameraCalibrator(
         eventsource=event_source,
+        r1_product='HESSIOR1Calibrator',
+        extractor_product='NeighbourPeakIntegrator',
     )
 
 
@@ -136,7 +142,7 @@ def process_file(input_file, reco_algorithm, n_events=-1, silent=False, return_i
 
         calibrator.calibrate(event)
         try:
-            image_features, reconstruction, _, _ = process_event(event, reco_algorithm=reco_algorithm)
+            image_features, reconstruction, _ = process_event(event, reco_algorithm=reco_algorithm)
             event_features = event_information(event, image_features, reconstruction)
             array_event_information.append(event_features)
             telescope_event_information.append(image_features)
@@ -238,9 +244,10 @@ def process_event(event, reco_algorithm='planes'):
 
     features = {}
     params = {}
-    cleaning_mask = {}
+
     pointing_azimuth = {}
     pointing_altitude = {}
+
     tel_x = {}
     tel_y = {}
     tel_focal_lengths = {}
@@ -250,6 +257,7 @@ def process_event(event, reco_algorithm='planes'):
             continue
 
         telescope_type_name = event.inst.subarray.tels[telescope_id].optics.tel_type
+
         boundary_thresh, picture_thresh, min_number_picture_neighbors = cleaning_level[camera.cam_id]
         mask = tailcuts_clean(
             camera,
@@ -258,17 +266,19 @@ def process_event(event, reco_algorithm='planes'):
             picture_thresh=picture_thresh,
             min_number_picture_neighbors=min_number_picture_neighbors
         )
-        cleaning_mask[telescope_id] = mask
+
         try:
+            cleaned = dl1.image[0].copy()
+            cleaned[~mask] = 0
             hillas_container = hillas_parameters_5(
-                camera[mask],
-                dl1.image[0, mask],
+                camera,
+                cleaned,
             )
             params[telescope_id] = hillas_container
         except HillasParameterizationError:
             continue
 
-        leakage_container = leakage(camera, dl1.image[0, mask])
+        # leakage_container = leakage(camera, dl1.image[0, mask])
 
         pointing_azimuth[telescope_id] = event.mc.tel[telescope_id].azimuth_raw * u.rad
         pointing_altitude[telescope_id] = event.mc.tel[telescope_id].altitude_raw * u.rad
@@ -293,7 +303,7 @@ def process_event(event, reco_algorithm='planes'):
         }
 
         d.update(hillas_container.as_dict())
-        d.update(leakage_container.as_dict())
+        # d.update(leakage_container.as_dict())
         features[telescope_id] = ({k: strip_unit(v) for k, v in d.items()})
 
     if reco_algorithm == 'intersection':
@@ -303,6 +313,7 @@ def process_event(event, reco_algorithm='planes'):
     elif reco_algorithm == 'planes':
         reco = HillasReconstructor()
         reconstruction = reco.predict(params, event.inst, pointing_altitude, pointing_azimuth)
+
 
     for telescope_id in event.dl1.tel.keys():
         if telescope_id not in params:
@@ -318,7 +329,7 @@ def process_event(event, reco_algorithm='planes'):
         d = np.sqrt((core_x - x)**2 + (core_y - y)**2)
         features[telescope_id]['distance_to_core'] = d.value
 
-    return pd.DataFrame(list(features.values())), reconstruction, params, cleaning_mask
+    return pd.DataFrame(list(features.values())), reconstruction, params
 
 
 
