@@ -1,7 +1,7 @@
 from ctapipe.io.eventsourcefactory import EventSourceFactory
 from ctapipe.calib import CameraCalibrator
 from ctapipe.image.hillas import hillas_parameters_5, HillasParameterizationError
-# from ctapipe.image import leakage
+from ctapipe.image import leakage
 from ctapipe.image.cleaning import tailcuts_clean
 from ctapipe.reco import HillasReconstructor
 from ctapipe.reco.HillasReconstructor import TooFewTelescopesException
@@ -278,7 +278,7 @@ def process_event(event, reco_algorithm='planes'):
         except HillasParameterizationError:
             continue
 
-        # leakage_container = leakage(camera, dl1.image[0, mask])
+        leakage_container = leakage(camera, dl1.image[0, mask])
 
         pointing_azimuth[telescope_id] = event.mc.tel[telescope_id].azimuth_raw * u.rad
         pointing_altitude[telescope_id] = event.mc.tel[telescope_id].altitude_raw * u.rad
@@ -303,7 +303,7 @@ def process_event(event, reco_algorithm='planes'):
         }
 
         d.update(hillas_container.as_dict())
-        # d.update(leakage_container.as_dict())
+        d.update(leakage_container.as_dict())
         features[telescope_id] = ({k: strip_unit(v) for k, v in d.items()})
 
     if reco_algorithm == 'intersection':
