@@ -47,11 +47,8 @@ cleaning_level = {
 
 @click.command()
 @click.argument(
-    'input_folder', type=click.Path(
-        exists=True,
-        dir_okay=True,
-        file_okay=False,
-    ))
+    'input_pattern',
+)
 @click.argument(
     'output_folder', type=click.Path(
         dir_okay=True,
@@ -60,7 +57,8 @@ cleaning_level = {
 @click.option('-n', '--n_events', default=-1, help='number of events to process in each file.')
 @click.option('-j', '--n_jobs', default=1, help='number of jobs to start. this is usefull when passing more than one simtel file.')
 @click.option('-r', '--reco_algorithm', default='planes', type=click.Choice(['intersection', 'planes']), help='Reco Algorithm to use')
-def main(input_folder, output_folder, n_events, n_jobs, reco_algorithm):
+@click.option('-o', '--overwrite', default=False, help='If false (default) will only process non-existing filenames')
+def main(input_pattern, output_folder, n_events, n_jobs, reco_algorithm, overwrite):
     '''
     process multiple simtel files gievn as INPUT_FILES into one hdf5 file saved in OUTPUT_FILE.
     The hdf5 file will contain three groups. 'runs', 'array_events', 'telescope_events'.
@@ -69,12 +67,26 @@ def main(input_folder, output_folder, n_events, n_jobs, reco_algorithm):
     See https://github.com/fact-project/classifier-tools
 
     '''
-    input_files = glob.glob(f'{input_folder}*.simtel.gz')
+    input_files = glob.glob(input_pattern)
     print(f'Found {len(input_files)} files.')
-    if len(input_files) == 0:
-        print(f'No files found. for pattern {input_folder}/*.simtel.gz Aborting')
-        return
 
+    input_files = [i for i in input_files if i.endswith('simtel.gz')]
+    print(f'Found {len(input_files)} files with "simtel.gz" extension.')
+    
+    if len(input_files) == 0:
+        print(f'No files found. For pattern {input_pattern}. Aborting')
+        return
+    
+
+    def output_file_for_input_file(input_file):
+        return os.path.join(output_folder, os.path.basename(input_file).replace('simtel.gz', 'hdf5'))
+   
+    if not overwrite:
+        input_files = list(filter(lambda v: not os.path.exists(output_file_for_input_file(v)), input_files))
+        print(f'Preprocessing on {len(input_files)} files that have no matching output')
+    else:
+        print('Preprocessing all found input_files and overwriting existing output.')
+    
     if n_jobs > 1:
         chunksize = 50
         n_chunks = (len(input_files) // chunksize) + 1
@@ -89,9 +101,7 @@ def main(input_folder, output_folder, n_events, n_jobs, reco_algorithm):
                         continue
 
 
-                    basename = os.path.basename(input_file)
-                    output_file = os.path.join(output_folder, basename.replace('.simtel.gz', '.hdf5'))
-
+                    output_file = output_file_for_input_file(input_file)
                     print(f'processed file {input_file}, writing to {output_file}')
 
                     fact.io.write_data(runs, output_file, key='runs', mode='w')
@@ -101,8 +111,7 @@ def main(input_folder, output_folder, n_events, n_jobs, reco_algorithm):
                     verify_file(output_file)
 
     else:
-        basenames = map(os.path.basename, input_files)
-        output_files = [os.path.join(output_folder, f.replace('.simtel.gz', '.hdf5')) for f in basenames]
+        output_files = map(output_file_for_input_file, input_files)
 
         for input_file, output_file in tqdm(zip(input_files, output_files)):
             print(f'processing file {input_file}, writing to {output_file}')
@@ -132,7 +141,6 @@ def process_file(input_file, reco_algorithm, n_events=-1, silent=False, return_i
         r1_product='HESSIOR1Calibrator',
         extractor_product='NeighbourPeakIntegrator',
     )
-
 
     telescope_event_information = []
     array_event_information = []
