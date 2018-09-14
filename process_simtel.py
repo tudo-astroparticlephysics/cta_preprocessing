@@ -57,7 +57,7 @@ cleaning_level = {
 @click.option('-n', '--n_events', default=-1, help='number of events to process in each file.')
 @click.option('-j', '--n_jobs', default=1, help='number of jobs to start. this is usefull when passing more than one simtel file.')
 @click.option('-r', '--reco_algorithm', default='planes', type=click.Choice(['intersection', 'planes']), help='Reco Algorithm to use')
-@click.option('-o', '--overwrite', default=False, help='If false (default) will only process non-existing filenames')
+@click.option('--overwrite/--no-overwrite', default=False, help='If false (default) will only process non-existing filenames')
 def main(input_pattern, output_folder, n_events, n_jobs, reco_algorithm, overwrite):
     '''
     process multiple simtel files gievn as INPUT_FILES into one hdf5 file saved in OUTPUT_FILE.
@@ -72,21 +72,20 @@ def main(input_pattern, output_folder, n_events, n_jobs, reco_algorithm, overwri
 
     input_files = [i for i in input_files if i.endswith('simtel.gz')]
     print(f'Found {len(input_files)} files with "simtel.gz" extension.')
-    
+
     if len(input_files) == 0:
         print(f'No files found. For pattern {input_pattern}. Aborting')
         return
-    
 
     def output_file_for_input_file(input_file):
         return os.path.join(output_folder, os.path.basename(input_file).replace('simtel.gz', 'hdf5'))
-   
+
     if not overwrite:
         input_files = list(filter(lambda v: not os.path.exists(output_file_for_input_file(v)), input_files))
         print(f'Preprocessing on {len(input_files)} files that have no matching output')
     else:
         print('Preprocessing all found input_files and overwriting existing output.')
-    
+
     if n_jobs > 1:
         chunksize = 50
         n_chunks = (len(input_files) // chunksize) + 1
@@ -99,7 +98,6 @@ def main(input_pattern, output_folder, n_events, n_jobs, reco_algorithm, overwri
 
                     if runs is None or array_events is None or telescope_events is None:
                         continue
-
 
                     output_file = output_file_for_input_file(input_file)
                     print(f'processed file {input_file}, writing to {output_file}')
@@ -286,7 +284,7 @@ def process_event(event, reco_algorithm='planes'):
         except HillasParameterizationError:
             continue
 
-        leakage_container = leakage(camera, dl1.image[0, mask])
+        leakage_container = leakage(camera, dl1.image[0], mask)
 
         pointing_azimuth[telescope_id] = event.mc.tel[telescope_id].azimuth_raw * u.rad
         pointing_altitude[telescope_id] = event.mc.tel[telescope_id].altitude_raw * u.rad
