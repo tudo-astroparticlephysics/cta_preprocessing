@@ -44,7 +44,7 @@ def main(input_folder, output_file, verify, n_jobs, chunk_size):
 
     n_chunks = (len(input_files) // chunk_size) + 1
     chunks = np.array_split(input_files, n_chunks)
-    with Parallel(n_jobs=n_jobs, verbose=1) as parallel:
+    with Parallel(n_jobs=n_jobs, verbose=0) as parallel:
         for chunk in tqdm(chunks):
             results = parallel(delayed(read_file)(f) for f in chunk)
 
