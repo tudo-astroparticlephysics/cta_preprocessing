@@ -1,8 +1,9 @@
 from ctapipe.io.eventsourcefactory import EventSourceFactory
 from ctapipe.calib import CameraCalibrator
 from ctapipe.image.hillas import hillas_parameters_5, HillasParameterizationError
+from ctapipe.image import leakage
 from ctapipe.image.cleaning import tailcuts_clean
-from ctapipe.reco import HillasReconstructor, HillasIntersection
+from ctapipe.reco import HillasReconstructor
 from ctapipe.reco.HillasReconstructor import TooFewTelescopesException
 
 from joblib import Parallel, delayed
@@ -10,14 +11,14 @@ from joblib import Parallel, delayed
 import pandas as pd
 import fact.io
 import click
-import os
 import pyhessio
 import numpy as np
 from collections import Counter
 from tqdm import tqdm
 import astropy.units as u
 from astropy.coordinates import SkyCoord
-
+import glob
+import os
 # do some horrible things to silence warnings in ctapipe
 import warnings
 from astropy.utils.exceptions import AstropyDeprecationWarning
@@ -46,18 +47,18 @@ cleaning_level = {
 
 @click.command()
 @click.argument(
-    'input_files', type=click.Path(
-        exists=True,
-        dir_okay=False,
-    ), nargs=-1)
+    'input_pattern',
+)
 @click.argument(
-    'output_file', type=click.Path(
-        dir_okay=False,
+    'output_folder', type=click.Path(
+        dir_okay=True,
+        file_okay=False,
     ))
 @click.option('-n', '--n_events', default=-1, help='number of events to process in each file.')
 @click.option('-j', '--n_jobs', default=1, help='number of jobs to start. this is usefull when passing more than one simtel file.')
 @click.option('-r', '--reco_algorithm', default='planes', type=click.Choice(['intersection', 'planes']), help='Reco Algorithm to use')
-def main(input_files, output_file, n_events, n_jobs, reco_algorithm):
+@click.option('--overwrite/--no-overwrite', default=False, help='If false (default) will only process non-existing filenames')
+def main(input_pattern, output_folder, n_events, n_jobs, reco_algorithm, overwrite):
     '''
     process multiple simtel files gievn as INPUT_FILES into one hdf5 file saved in OUTPUT_FILE.
     The hdf5 file will contain three groups. 'runs', 'array_events', 'telescope_events'.
@@ -66,39 +67,68 @@ def main(input_files, output_file, n_events, n_jobs, reco_algorithm):
     See https://github.com/fact-project/classifier-tools
 
     '''
+    input_files = glob.glob(input_pattern)
+    print(f'Found {len(input_files)} files.')
 
-    if os.path.exists(output_file):
-        click.confirm('File {} exists. Overwrite?'.format(output_file), default=False, abort=True)
-        os.remove(output_file)
+    input_files = [i for i in input_files if i.endswith('simtel.gz')]
+    print(f'Found {len(input_files)} files with "simtel.gz" extension.')
+
+    if len(input_files) == 0:
+        print(f'No files found. For pattern {input_pattern}. Aborting')
+        return
+
+    def output_file_for_input_file(input_file):
+        return os.path.join(output_folder, os.path.basename(input_file).replace('simtel.gz', 'hdf5'))
+
+    if not overwrite:
+        input_files = list(filter(lambda v: not os.path.exists(output_file_for_input_file(v)), input_files))
+        print(f'Preprocessing on {len(input_files)} files that have no matching output')
+    else:
+        print('Preprocessing all found input_files and overwriting existing output.')
 
     if n_jobs > 1:
-        results = Parallel(n_jobs=n_jobs, verbose=50)(delayed(process_file)(f, reco_algorithm=reco_algorithm, n_events=n_events, silent=True,) for f in input_files)
-        for r in results:
-            runs, array_events, telescope_events = r
+        chunksize = 50
+        n_chunks = (len(input_files) // chunksize) + 1
+        chunks = np.array_split(input_files, n_chunks)
+        with Parallel(n_jobs=n_jobs, verbose=50) as parallel:
+            for chunk in tqdm(chunks):
+                results = parallel(delayed(process_file)(f, reco_algorithm=reco_algorithm, n_events=n_events, silent=True, return_input_file=True) for f in chunk)
+                for r in results:
+                    runs, array_events, telescope_events, input_file = r
 
-            if runs is None or array_events is None or telescope_events is None:
-                continue
+                    if runs is None or array_events is None or telescope_events is None:
+                        continue
 
-            fact.io.write_data(runs, output_file, key='runs', mode='a')
-            fact.io.write_data(array_events, output_file, key='array_events', mode='a')
-            fact.io.write_data(telescope_events, output_file, key='telescope_events', mode='a')
+                    output_file = output_file_for_input_file(input_file)
+                    print(f'processed file {input_file}, writing to {output_file}')
+
+                    fact.io.write_data(runs, output_file, key='runs', mode='w')
+                    fact.io.write_data(array_events, output_file, key='array_events', mode='a')
+                    fact.io.write_data(telescope_events, output_file, key='telescope_events', mode='a')
+
+                    verify_file(output_file)
+
     else:
-        for input_file in input_files:
-            print('processing file {}'.format(input_file))
+        output_files = map(output_file_for_input_file, input_files)
+
+        for input_file, output_file in tqdm(zip(input_files, output_files)):
+            print(f'processing file {input_file}, writing to {output_file}')
             runs, array_events, telescope_events = process_file(input_file, reco_algorithm=reco_algorithm, n_events=n_events)
 
             if runs is None or array_events is None or telescope_events is None:
                 print('file contained no information.')
                 continue
 
-            fact.io.write_data(runs, output_file, key='runs', mode='a')
+            fact.io.write_data(runs, output_file, key='runs', mode='w')
             fact.io.write_data(array_events, output_file, key='array_events', mode='a')
             fact.io.write_data(telescope_events, output_file, key='telescope_events', mode='a')
 
-    verify_file(output_file)
+            verify_file(output_file)
 
 
-def process_file(input_file, reco_algorithm, n_events=-1, silent=False):
+
+
+def process_file(input_file, reco_algorithm, n_events=-1, silent=False, return_input_file=False):
     event_source = EventSourceFactory.produce(
         input_url=input_file,
         max_events=n_events if n_events > 1 else None,
@@ -106,8 +136,9 @@ def process_file(input_file, reco_algorithm, n_events=-1, silent=False):
     )
     calibrator = CameraCalibrator(
         eventsource=event_source,
+        r1_product='HESSIOR1Calibrator',
+        extractor_product='NeighbourPeakIntegrator',
     )
-
 
     telescope_event_information = []
     array_event_information = []
@@ -117,7 +148,7 @@ def process_file(input_file, reco_algorithm, n_events=-1, silent=False):
 
         calibrator.calibrate(event)
         try:
-            image_features, reconstruction, _, _ = process_event(event, reco_algorithm=reco_algorithm)
+            image_features, reconstruction, _ = process_event(event, reco_algorithm=reco_algorithm)
             event_features = event_information(event, image_features, reconstruction)
             array_event_information.append(event_features)
             telescope_event_information.append(image_features)
@@ -125,20 +156,22 @@ def process_file(input_file, reco_algorithm, n_events=-1, silent=False):
             continue
 
     if (len(telescope_event_information) == 0):
+        if return_input_file:
+            return None, None, None, None
         return None, None, None
 
     telescope_events = pd.concat(telescope_event_information)
     telescope_events.set_index(['run_id', 'array_event_id', 'telescope_id'], drop=True, verify_integrity=True, inplace=True)
 
-
     array_events = pd.DataFrame(array_event_information)
     array_events.set_index(['run_id', 'array_event_id'], drop=True, verify_integrity=True, inplace=True)
-
 
     run_information = read_simtel_mc_information(input_file)
     df_runs = pd.DataFrame([run_information])
     df_runs.set_index('run_id', drop=True, verify_integrity=True, inplace=True)
 
+    if return_input_file:
+        return df_runs, array_events, telescope_events, input_file
     return df_runs, array_events, telescope_events
 
 
@@ -217,9 +250,10 @@ def process_event(event, reco_algorithm='planes'):
 
     features = {}
     params = {}
-    cleaning_mask = {}
+
     pointing_azimuth = {}
     pointing_altitude = {}
+
     tel_x = {}
     tel_y = {}
     tel_focal_lengths = {}
@@ -229,6 +263,7 @@ def process_event(event, reco_algorithm='planes'):
             continue
 
         telescope_type_name = event.inst.subarray.tels[telescope_id].optics.tel_type
+
         boundary_thresh, picture_thresh, min_number_picture_neighbors = cleaning_level[camera.cam_id]
         mask = tailcuts_clean(
             camera,
@@ -237,15 +272,19 @@ def process_event(event, reco_algorithm='planes'):
             picture_thresh=picture_thresh,
             min_number_picture_neighbors=min_number_picture_neighbors
         )
-        cleaning_mask[telescope_id] = mask
+
         try:
-            h = hillas_parameters_5(
-                camera[mask],
-                dl1.image[0, mask],
+            cleaned = dl1.image[0].copy()
+            cleaned[~mask] = 0
+            hillas_container = hillas_parameters_5(
+                camera,
+                cleaned,
             )
-            params[telescope_id] = h
+            params[telescope_id] = hillas_container
         except HillasParameterizationError:
             continue
+
+        leakage_container = leakage(camera, dl1.image[0], mask)
 
         pointing_azimuth[telescope_id] = event.mc.tel[telescope_id].azimuth_raw * u.rad
         pointing_altitude[telescope_id] = event.mc.tel[telescope_id].altitude_raw * u.rad
@@ -269,8 +308,10 @@ def process_event(event, reco_algorithm='planes'):
             'focal_length': telescope_description.optics.equivalent_focal_length,
         }
 
-        d.update(h.as_dict())
+        d.update(hillas_container.as_dict())
+        d.update(leakage_container.as_dict())
         features[telescope_id] = ({k: strip_unit(v) for k, v in d.items()})
+
     if reco_algorithm == 'intersection':
         reco = HillasIntersection()
         array_direction = SkyCoord(alt=event.mcheader.run_array_direction[1], az=event.mcheader.run_array_direction[0], frame='altaz')
@@ -278,6 +319,7 @@ def process_event(event, reco_algorithm='planes'):
     elif reco_algorithm == 'planes':
         reco = HillasReconstructor()
         reconstruction = reco.predict(params, event.inst, pointing_altitude, pointing_azimuth)
+
 
     for telescope_id in event.dl1.tel.keys():
         if telescope_id not in params:
@@ -293,7 +335,7 @@ def process_event(event, reco_algorithm='planes'):
         d = np.sqrt((core_x - x)**2 + (core_y - y)**2)
         features[telescope_id]['distance_to_core'] = d.value
 
-    return pd.DataFrame(list(features.values())), reconstruction, params, cleaning_mask
+    return pd.DataFrame(list(features.values())), reconstruction, params
 
 
 
