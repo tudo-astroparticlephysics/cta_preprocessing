@@ -30,18 +30,3 @@ pip install --trusted-host pypi.org --trusted-host pypi.python.org  --trusted-ho
 ```
 
 Some of the gird servers seem to come with a miniconda version. So one might be able to use pip to install things at the nodes. Im gonna try. 
-
-I guess one first has to upload a tarball containing the ctapipe version (and other stuff) one wants to use.
-`dirac-dms-add-file --help`
-
-Like this for example
-```
-tar -cvf ctapipe_custom.tar /home/kbruegge/ctapipe
-tar -cvf pyhessio.tar /home/kbruegge/pyhessio
-tar -cvf ctapipe-extra.tar /home/kbruegge/ctapipe-extra
-dirac-dms-add-file /vo.cta.in2p3.fr/user/k/kai.bruegge/tar/ctapipe_custom.tar ctapipe_custom.tar
-dirac-dms-add-file /vo.cta.in2p3.fr/user/k/kai.bruegge/tar/pyhessio.tar pyhessio.tar
-dirac-dms-add-file /vo.cta.in2p3.fr/user/k/kai.bruegge/tar/ctapipe-extra.tar ctapipe-extra.tar
-
-
-```
