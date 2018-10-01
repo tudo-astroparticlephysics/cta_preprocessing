@@ -1,6 +1,6 @@
 import os
 from DIRAC.Core.Base import Script
-Script.parseCommandLine()  # this might be needed. No idea why. This seems highly fishy. 
+Script.parseCommandLine()  # this might be needed. No idea why. This seems highly fishy. Also this interfers with click. what the actual F
 from DIRAC.Interfaces.API.Job import Job
 from DIRAC.Interfaces.API.Dirac import Dirac
 import click
@@ -10,8 +10,9 @@ from tqdm import tqdm
 
 @click.command()
 @click.argument('dataset')
-@click.option('-c', '--chunksize', help='delete template Files', default=50)
-def main(dataset, delete, chunksize):
+@click.option('-c', '--chunksize', help='delete template Files', default=5)
+@click.option('-t', '--test', help='do not actually submit jobs', is_flag=True)
+def main(dataset, chunksize, test):
     '''
     The DATASET argument is a list of paths to MC files on the grid. Like the output of
     cta-prod3-dump-dataset for example. See also
@@ -40,8 +41,9 @@ def main(dataset, delete, chunksize):
     print('Got a total of {} chunks'.format(len(chunks)))
     for c, simtel_filenames in tqdm(enumerate(chunks[0:2])): # send just 2 jobs for now.
         # convert chunk to a list of strings. becasue this dirac thing cant take numpy arrays 
-        simtel_filenames = [str(s) for s in simtel_filenames]
+        simtel_filenames = [str(s).strip() for s in simtel_filenames]
         print('Starting processing for chunk {}'.format(c))
+        print(simtel_filenames)
         j = Job()
         # set runtime to 0.5h
         j.setCPUTime(30 * 60)
