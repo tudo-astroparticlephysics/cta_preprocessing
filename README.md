@@ -26,7 +26,7 @@ https://forge.in2p3.fr/projects/cta_dirac/wiki/CTA-DIRAC_Users_Guide
 This will install its own version of python and pip for some effing reason. I do not think there is an excuse for that.
 Anyhow. After thats all over you might want to install dependencies in that python installation. This works by simply doing this then:
 ```
-pip install --trusted-host pypi.org --trusted-host pypi.python.org  --trusted-host files.pythonhosted.org  numpy
+pip install --trusted-host pypi.org --trusted-host pypi.python.org  --trusted-host files.pythonhosted.org  numpy click tqdm
 ```
 
 Some of the gird servers seem to come with a miniconda version. So one might be able to use pip to install things at the nodes. Im gonna try. 
