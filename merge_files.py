@@ -24,14 +24,15 @@ from joblib import Parallel, delayed
 @click.option('-j', '--n_jobs', default=1, help='number of jobs to use for reading data')
 @click.option('-c', '--chunk_size', default=50, help='files per chunk')
 def main(input_folder, output_file, verify, n_jobs, chunk_size):
-    '''
-    process multiple simtel files gievn as INPUT_FILES into one hdf5 file saved in OUTPUT_FILE.
+    """
+
+    Process multiple simtel files gievn as INPUT_FILES into one hdf5 file saved in OUTPUT_FILE.
     The hdf5 file will contain three groups. 'runs', 'array_events', 'telescope_events'.
 
     These files can be put into the classifier tools for learning.
     See https://github.com/fact-project/classifier-tools
+    """
 
-    '''
     input_files = glob.glob(f'{input_folder}/*.hdf5')
     print(f'Found {len(input_files)} files.')
     if len(input_files) == 0:
@@ -80,4 +81,5 @@ def verify_file(input_file_path):
 
 
 if __name__ == '__main__':
+    # pylint: disable=no-value-for-parameter
     main()
