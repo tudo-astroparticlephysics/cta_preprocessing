@@ -40,8 +40,8 @@ def main(dataset, chunksize, test):
 
     print('Got a total of {} chunks'.format(len(chunks)))
     for c, simtel_filenames in tqdm(enumerate(chunks[0:2])): # send just 2 jobs for now.
-        # convert chunk to a list of strings. becasue this dirac thing cant take numpy arrays
-        simtel_filenames = [str(s).strip() for s in simtel_filenames]
+        # convert chunk to a list of strings. becasue this dirac thing cant take numpy arrays 
+        simtel_filenames = [str(s).strip() for s in simtel_filenames if 'SCT' not in s]
         print('Starting processing for chunk {}'.format(c))
         print(simtel_filenames)
         j = Job()
@@ -57,7 +57,6 @@ def main(dataset, chunksize, test):
         # These servers seem to  have mini conda installed
         # destination = np.random.choice(servers_with_miniconda)
         j.setDestination(servers_with_miniconda)
-
 
         value = dirac.submit(j)
         print('Number {} Submission Result: {}'.format(c, value))
