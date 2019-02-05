@@ -8,7 +8,7 @@ import copy
 from functools import partial
 import os
 
-import multiprocessing
+from joblib import delayed, Parallel
 
 from ctapipe.io.eventsourcefactory import EventSourceFactory
 from ctapipe.io import HDF5TableWriter
@@ -18,9 +18,11 @@ from ctapipe.image import leakage, concentration
 from ctapipe.image.cleaning import tailcuts_clean
 from ctapipe.reco import HillasReconstructor
 
+import copy
 
 from preprocessing.containers import TelescopeParameterContainer, ArrayEventContainer, RunInfoContainer
 from ctapipe.io.containers import  TelescopePointingContainer
+
 
 names_to_id = {'LSTCam': 1, 'NectarCam': 2, 'FlashCam': 3, 'DigiCam': 4, 'CHEC': 5}
 types_to_id = {'LST': 1, 'MST': 2, 'SST': 3}
@@ -46,7 +48,7 @@ class ReconstructionError(Exception):
 @click.argument('input_file', type=click.Path())
 @click.argument('output_file', type=click.Path())
 @click.option('-n', '--n_events', default=-1, help='number of events to process in each file.')
-@click.option('-j', '--n_jobs', default=1, help='number of jobs to start. this is usefull when passing more than one simtel file.')
+@click.option('-j', '--n_jobs', default=2, help='number of jobs to start. this is usefull when passing more than one simtel file.')
 @click.option('--overwrite/--no-overwrite', default=False, help='If false (default) will only process non-existing filenames')
 def main(input_file, output_file, n_events, n_jobs, overwrite):
     '''
@@ -55,8 +57,8 @@ def main(input_file, output_file, n_events, n_jobs, overwrite):
 
     These files can be put into the classifier tools for learning.
     See https://github.com/fact-project/classifier-tools
+    '''
 
-    '''    
     print(f'processing file {input_file}, writing to {output_file}')
     
     if not overwrite:
@@ -68,12 +70,12 @@ def main(input_file, output_file, n_events, n_jobs, overwrite):
             print(f'Output file exists. Overwriting.')
             os.remove(output_file)
 
-    run_info_container, array_events, telescope_events = process_file(input_file,  n_events=n_events, n_jobs=n_jobs)
+    run_info_container, array_events, telescope_events = process_file(input_file, n_events=n_events, n_jobs=n_jobs)
     write_result_to_file(run_info_container, array_events, telescope_events, output_file)
 
 
-def write_result_to_file(run_info_container, array_events, telescope_events, output_file):
-    with HDF5TableWriter(output_file, mode='a', group_name='', add_prefix=True) as h5_table:
+def write_result_to_file(run_info_container, array_events, telescope_events, output_file, mode='a'):
+    with HDF5TableWriter(output_file, mode=mode, group_name='', add_prefix=True) as h5_table:
         run_info_container.mc.run_array_direction = 0
         h5_table.write('runs', [run_info_container, run_info_container.mc])
         for array_event in array_events:
@@ -86,31 +88,16 @@ def write_result_to_file(run_info_container, array_events, telescope_events, out
             )
 
 
-
-    # import pandas as pd
-    # df = pd.read_hdf(output_file, 'telescope_events')
-    # print(df)
-    # print(df.columns)
-
-    # print('::'*50)
-    # df = pd.read_hdf(output_file, 'array_events')
-    # print(df)
-    # print(df.columns)
-
-    # print('::'*50)
-    # df = pd.read_hdf(output_file, 'runs')
-    # print(df)
-    # print(df.columns)
-
-
 def process_parallel(event, calibrator):
     try:
         return process_event(event, calibrator)
     except ReconstructionError:
         pass
 
+def print_info(event):
+    print(event.dl0.event_id)
 
-def process_file(input_file, n_events=-1, silent=False, n_jobs=6):
+def process_file(input_file, n_events=-1, silent=False, n_jobs=2):
     source = EventSourceFactory.produce(
         input_url=input_file,
         max_events=n_events if n_events > 1 else None,
@@ -128,8 +115,10 @@ def process_file(input_file, n_events=-1, silent=False, n_jobs=6):
     
     event_iterator = filter(lambda e: len(e.dl0.tels_with_data) > 1, source)
 
-    with multiprocessing.Pool(n_jobs) as pool:
-        result =  [a for a in tqdm(pool.imap(partial(process_parallel, calibrator=calibrator) , event_iterator, chunksize=30))]
+    with Parallel(n_jobs=n_jobs, verbose=50, prefer='processes') as parallel:
+        p = parallel(delayed(partial(process_parallel, calibrator=calibrator))(copy.deepcopy(e)) for e in event_iterator)
+        # result =  [a for a in tqdm(pool.imap(partial(process_parallel, calibrator=calibrator) , event_iterator, chunksize=10))]
+        result = [a for a in tqdm(p)]
     
     array_event_containers = [r[0] for r in result if r]
 
@@ -202,6 +191,7 @@ def process_event(event, calibrator):
     Processes
     '''
 
+
     telescope_types = []
 
     hillas_reconstructor = HillasReconstructor()
@@ -237,13 +227,13 @@ def process_event(event, calibrator):
     counter = Counter(telescope_types)  
     array_event = ArrayEventContainer(
         array_event_id=event.dl0.event_id,
-        run_id =  event.r0.obs_id,
+        run_id=event.r0.obs_id,
         reco=reconstruction_container,
-        total_intensity = sum([t.hillas.intensity for t in telescope_event_containers.values()]),
-        num_triggered_lst =  counter['LST'],
-        num_triggered_mst =  counter['MST'],
-        num_triggered_sst =  counter['SST'],
-        num_triggered_telescopes = len(telescope_types),
+        total_intensity=sum([t.hillas.intensity for t in telescope_event_containers.values()]),
+        num_triggered_lst=counter['LST'],
+        num_triggered_mst=counter['MST'],
+        num_triggered_sst=counter['SST'],
+        num_triggered_telescopes=len(telescope_types),
         mc=mc_container,
     )
 
