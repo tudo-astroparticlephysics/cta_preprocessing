@@ -1,8 +1,6 @@
 # All needed entries with default (working) values for the script
 # This do not necessarily resemble good values physics wise
 
-input_pattern: "*.simtel.gz"
-output_suffix: ".hdf5"
 
 overwrite: False
 
@@ -29,7 +27,7 @@ types_to_id:
   MST: 2
   SST: 3
 
-n_events: -1
+n_events: 50
 
 n_jobs: 2
 
