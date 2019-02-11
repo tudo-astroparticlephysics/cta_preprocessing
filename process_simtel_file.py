@@ -173,11 +173,12 @@ def calculate_image_features(telescope_id, event, dl1, config):
     timing_container = timing_parameters(camera, dl1.image[0],
                                          dl1.peakpos[0], hillas_container)
     timing_container.prefix = ''
+    # membership missing for now as it causes problems with the hdf5tablewriter 
     num_islands, membership = number_of_islands(camera, mask)
     island_container = IslandContainer(
-        num_islands=num_islands,
-        island_membership=membership
-    )
+        num_islands=num_islands)
+    island_container.prefix = ''
+
 
     alt_pointing = event.mc.tel[telescope_id].altitude_raw * u.rad
     az_pointing = event.mc.tel[telescope_id].azimuth_raw * u.rad

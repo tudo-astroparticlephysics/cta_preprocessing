@@ -9,7 +9,7 @@ from ctapipe.core import Field
 class IslandContainer(Container):
     container_prefix = 'islands'
     num_islands = Field(np.nan, 'number of islands')
-    island_membership = Field(np.nan, 'membership of each pixel, compressed matrix')
+    # island_membership = Field(np.nan, 'membership of each pixel, compressed matrix')
 
 
 class TelescopeParameterContainer(Container):
