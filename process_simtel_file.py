@@ -20,6 +20,7 @@ from ctapipe.reco import HillasReconstructor
 
 import copy
 
+from preprocessing.parameters import PREPConfig
 from preprocessing.containers import TelescopeParameterContainer, ArrayEventContainer, RunInfoContainer
 from ctapipe.io.containers import  TelescopePointingContainer
 
@@ -47,10 +48,13 @@ class ReconstructionError(Exception):
 @click.command()
 @click.argument('input_file', type=click.Path())
 @click.argument('output_file', type=click.Path())
-@click.option('-n', '--n_events', default=-1, help='number of events to process in each file.')
-@click.option('-j', '--n_jobs', default=2, help='number of jobs to start. this is usefull when passing more than one simtel file.')
-@click.option('--overwrite/--no-overwrite', default=False, help='If false (default) will only process non-existing filenames')
-def main(input_file, output_file, n_events, n_jobs, overwrite):
+@click.argument('config_file',
+                type=click.Path(file_okay=True)
+                )
+# @click.option('-n', '--n_events', default=-1, help='number of events to process in each file.')
+# @click.option('-j', '--n_jobs', default=1, help='number of jobs to start. this is usefull when passing more than one simtel file.')
+# @click.option('--overwrite/--no-overwrite', default=False, help='If false (default) will only process non-existing filenames')
+def main(input_file, output_file, config_file):
     '''
     process simtel files given as INPUT_FILE into one hdf5 file saved in OUTPUT_FILE.
     The hdf5 file will contain three groups. 'runs', 'array_events', 'telescope_events'.
@@ -59,9 +63,10 @@ def main(input_file, output_file, n_events, n_jobs, overwrite):
     See https://github.com/fact-project/classifier-tools
     '''
 
+    config = PREPConfig(config_file)
     print(f'processing file {input_file}, writing to {output_file}')
     
-    if not overwrite:
+    if not config.overwrite:
         if os.path.exists(output_file):
             print(f'Output file exists. Stopping.')
             return
@@ -70,7 +75,7 @@ def main(input_file, output_file, n_events, n_jobs, overwrite):
             print(f'Output file exists. Overwriting.')
             os.remove(output_file)
 
-    run_info_container, array_events, telescope_events = process_file(input_file, n_events=n_events, n_jobs=n_jobs)
+    run_info_container, array_events, telescope_events = process_file(input_file, config)
     write_result_to_file(run_info_container, array_events, telescope_events, output_file)
 
 
@@ -88,19 +93,19 @@ def write_result_to_file(run_info_container, array_events, telescope_events, out
             )
 
 
-def process_parallel(event, calibrator):
+def process_parallel(event, calibrator, config):
     try:
-        return process_event(event, calibrator)
+        return process_event(event, calibrator, config)
     except ReconstructionError:
         pass
 
 def print_info(event):
     print(event.dl0.event_id)
 
-def process_file(input_file, n_events=-1, silent=False, n_jobs=2):
+def process_file(input_file, config):# n_events=-1, silent=False, n_jobs=2):
     source = EventSourceFactory.produce(
         input_url=input_file,
-        max_events=n_events if n_events > 1 else None,
+        max_events=n_events if config.n_events > 1 else None,
     )
     calibrator = CameraCalibrator(
         eventsource=source,
@@ -110,13 +115,13 @@ def process_file(input_file, n_events=-1, silent=False, n_jobs=2):
 
 
 
-    allowed_tels = [id for id in source._subarray_info.tels if source._subarray_info.tels[id].camera.cam_id in allowed_cameras]
+    allowed_tels = [id for id in source._subarray_info.tels if source._subarray_info.tels[id].camera.cam_id in config.allowed_cameras]
     source.allowed_tels = allowed_tels
     
     event_iterator = filter(lambda e: len(e.dl0.tels_with_data) > 1, source)
 
-    with Parallel(n_jobs=n_jobs, verbose=50, prefer='processes') as parallel:
-        p = parallel(delayed(partial(process_parallel, calibrator=calibrator))(copy.deepcopy(e)) for e in event_iterator)
+    with Parallel(n_jobs=config.n_jobs, verbose=config.verbose, prefer='processes') as parallel:
+        p = parallel(delayed(partial(process_parallel, calibrator=calibrator, config=config))(copy.deepcopy(e)) for e in event_iterator)
         # result =  [a for a in tqdm(pool.imap(partial(process_parallel, calibrator=calibrator) , event_iterator, chunksize=10))]
         result = [a for a in tqdm(p)]
     
@@ -134,12 +139,12 @@ def process_file(input_file, n_events=-1, silent=False, n_jobs=2):
     return run_info_container, array_event_containers, telescope_event_containers
 
 
-def calculate_image_features(telescope_id, event, dl1):
+def calculate_image_features(telescope_id, event, dl1, config):
     array_event_id = event.dl0.event_id
     run_id =  event.r0.obs_id
     camera = event.inst.subarray.tels[telescope_id].camera
 
-    boundary_thresh, picture_thresh, min_number_picture_neighbors = cleaning_level[camera.cam_id]
+    boundary_thresh, picture_thresh, min_number_picture_neighbors = config.cleaning_level[camera.cam_id]
     mask = tailcuts_clean(
         camera,
         dl1.image[0],
@@ -186,11 +191,10 @@ def calculate_distance_to_core(tel_params, event, reconstruction_result):
 
         container.distance_to_reconstructed_core_position = d
 
-def process_event(event, calibrator):
+def process_event(event, calibrator, config):
     '''
     Processes
     '''
-
 
     telescope_types = []
 
@@ -204,7 +208,7 @@ def process_event(event, calibrator):
         telescope_types.append(telescope_type_name)
 
         try:
-            telescope_event_containers[telescope_id] = calculate_image_features(telescope_id, event, dl1)
+            telescope_event_containers[telescope_id] = calculate_image_features(telescope_id, event, dl1, config)
         except HillasParameterizationError:
             continue
 

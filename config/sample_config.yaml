@@ -1,0 +1,62 @@
+# All needed entries with default (working) values for the script
+# This do not necessarily resemble good values physics wise
+
+input_pattern: "*.simtel.gz"
+output_suffix: ".hdf5"
+
+overwrite: False
+
+
+# use this to choose specific telescope types
+allowed_cameras: 
+  - LSTCam
+  - NectarCam
+  - DigiCam
+
+reco_algorithm: planes
+integrator : NeighbourPeakIntegrator
+cleaning_method: tailcuts_clean
+
+names_to_id:
+ LSTCam: 1
+ NectarCam: 2
+ FlashCam: 3
+ DigiCam: 4
+ CHEC: 5
+
+types_to_id:
+  LST: 1
+  MST: 2
+  SST: 3
+
+n_events: -1
+
+n_jobs: 2
+
+chunksize: 50
+
+silent: False
+
+verbose: 50
+
+cleaning_level:   ## Different algorithms need different parameters!
+  LSTCam:
+    - 3.5
+    - 7.5
+    - 2
+  NectarCam:
+    - 3
+    - 5.5
+    - 2
+  DigiCam:
+    - 2
+    - 4.5
+    - 2
+
+min_num_islands: 8
+
+min_width: 30
+
+min_length: 70
+
+min_number_of_valid_triggered_cameras: 2
