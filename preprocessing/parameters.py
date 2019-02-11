@@ -1,6 +1,5 @@
 import yaml
 
-# inheritage from CONFIG?
 
 class PREPConfig(object):
     __slots__ = (
@@ -35,7 +34,6 @@ class PREPConfig(object):
                 raise MissingConfigEntry('PREPConfig.__init__()',
                                          'Missing entry in Config file for: '
                                          + x)
-
 
 
 class MissingConfigEntry(Exception):

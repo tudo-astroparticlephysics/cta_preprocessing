@@ -10,20 +10,18 @@ from preprocessing.parameters import PREPConfig
 
 @click.command()
 @click.argument('input_pattern', type=str)
-@click.argument('output_folder', type=click.Path(dir_okay=True, file_okay=False))
+@click.argument('output_folder', type=click.Path(dir_okay=True,
+                                                 file_okay=False))
 @click.argument('config_file',
                 type=click.Path(file_okay=True)
                 )
-# @click.option('-n', '--n_events', default=-1, help='number of events to process in each file.')
-# @click.option('-j', '--n_jobs', default=1, help='number of jobs to start. this is usefull when passing more than one simtel file.')
-# @click.option('--overwrite/--no-overwrite', default=False, help='If false (default) will only process non-existing filenames')
 def main(input_pattern, output_folder, config_file):
     '''
-    process simtel files given as mathcin INPUT_PATTERN into several hdf5 files saved in OUTPUT_FOLDER
+    process simtel files given as matching INPUT_PATTERN into several
+    hdf5 files saved in OUTPUT_FOLDER
     with the same filename as the input but with .h5 extension.
     '''
     config = PREPConfig(config_file)
-    print(config)
     input_files = glob.glob(input_pattern)
     print(f'Found {len(input_files)} files matching pattern.')
 
@@ -32,13 +30,18 @@ def main(input_pattern, output_folder, config_file):
         return
 
     def output_file_for_input_file(input_file):
-        return os.path.join(output_folder, os.path.basename(input_file).replace('simtel.gz', 'h5'))
+        return os.path.join(output_folder,
+                            os.path.basename(input_file).replace('simtel.gz',
+                                                                 'h5'))
 
     if not config.overwrite:
-        input_files = list(filter(lambda v: not os.path.exists(output_file_for_input_file(v)), input_files))
-        print(f'Preprocessing on {len(input_files)} files that have no matching output')
+        input_files = list(filter(lambda v: not os.path.exists(output_file_for_input_file(v)),
+                                  input_files))
+        print(f'''Preprocessing on {len(input_files)}
+              files that have no matching output''')
     else:
-        print('Preprocessing all found input_files and overwriting existing output.')
+        print('Preprocessing all found input_files'
+              ' and overwriting existing output.')
         output_files = [output_file_for_input_file(f) for f in input_files]
         [os.remove(of) for of in output_files if os.path.exists(of)]
 
@@ -52,14 +55,16 @@ def main(input_pattern, output_folder, config_file):
     with Parallel(n_jobs=config.n_jobs, verbose=config.verbose) as parallel:
         for chunk in tqdm(chunks):
             results = parallel(delayed(process_file)(f, config) for f in chunk)
-                    #   parallel(delayed(process_file)(f, reco_algorithm=reco_algorithm, n_events=n_events, silent=True, return_input_file=True) for f in chunk)
             for input_file, r in zip(input_files, results):
                 # from IPython import embed; embed()
                 run_info_container, array_events, telescope_events = r
                 output_file = output_file_for_input_file(input_file)
-                write_result_to_file(run_info_container, array_events, telescope_events, output_file)
+                write_result_to_file(run_info_container,
+                                     array_events,
+                                     telescope_events,
+                                     output_file)
                 print(f'processed file {input_file}, writing to {output_file}')
-            
+
 
 if __name__ == '__main__':
     # pylint: disable=no-value-for-parameter
