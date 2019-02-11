@@ -2,8 +2,14 @@ import astropy.units as u
 import numpy as np
 
 from ctapipe.io.containers import TelescopePointingContainer, MCEventContainer, Container, ReconstructedShowerContainer
-from ctapipe.io.containers import LeakageContainer, HillasParametersContainer, ConcentrationContainer, MCHeaderContainer
+from ctapipe.io.containers import LeakageContainer, HillasParametersContainer, ConcentrationContainer, MCHeaderContainer, TimingParametersContainer
 from ctapipe.core import Field
+
+
+class IslandContainer(Container):
+    container_prefix = 'islands'
+    num_islands = Field(np.nan, 'number of islands')
+    island_membership = Field(np.nan, 'membership of each pixel, compressed matrix')
 
 
 class TelescopeParameterContainer(Container):
@@ -17,6 +23,8 @@ class TelescopeParameterContainer(Container):
     leakage = Field(LeakageContainer(), 'Leakage container')
     hillas = Field(HillasParametersContainer(), 'HillasParametersContainer')
     concentration = Field(ConcentrationContainer(), 'ConcentrationContainer')
+    timing = Field(TimingParametersContainer(), 'TimingParametersContainer')
+    islands = Field(IslandContainer(), 'IslandContainer')
 
     pointing = Field(TelescopePointingContainer(), 'pointing information')
 
@@ -49,3 +57,5 @@ class ArrayEventContainer(Container):
     num_triggered_lst = Field(np.nan, 'Number of triggered LSTs')
     num_triggered_mst = Field(np.nan, 'Number of triggered MSTs')
     num_triggered_sst = Field(np.nan, 'Number of triggered SSTs')
+
+

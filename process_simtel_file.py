@@ -15,12 +15,13 @@ from ctapipe.io import HDF5TableWriter
 from ctapipe.calib import CameraCalibrator
 from ctapipe.image.hillas import hillas_parameters, HillasParameterizationError
 from ctapipe.image import leakage, concentration
-from ctapipe.image.cleaning import tailcuts_clean
+from ctapipe.image.cleaning import tailcuts_clean, number_of_islands
+from ctapipe.image.timing_parameters import timing_parameters
 from ctapipe.reco import HillasReconstructor
 
 
 from preprocessing.parameters import PREPConfig
-from preprocessing.containers import TelescopeParameterContainer, ArrayEventContainer, RunInfoContainer
+from preprocessing.containers import TelescopeParameterContainer, ArrayEventContainer, RunInfoContainer, IslandContainer
 from ctapipe.io.containers import TelescopePointingContainer
 
 
@@ -88,7 +89,9 @@ def write_result_to_file(run_info_container,
                  tel_event.pointing,
                  tel_event.hillas,
                  tel_event.concentration,
-                 tel_event.leakage]
+                 tel_event.leakage,
+                 tel_event.timing,
+                 tel_event.islands]
             )
 
 
@@ -111,7 +114,7 @@ def process_file(input_file, config):
     calibrator = CameraCalibrator(
         eventsource=source,
         r1_product='HESSIOR1Calibrator',
-        extractor_product='NeighbourPeakIntegrator',
+        extractor_product=config.integrator,
     )
 
     allowed_tels = [id for id in source._subarray_info.tels if source._subarray_info.tels[id].camera.cam_id in config.allowed_cameras]
@@ -167,6 +170,14 @@ def calculate_image_features(telescope_id, event, dl1, config):
                                             dl1.image[0],
                                             hillas_container)
     concentration_container.prefix = ''
+    timing_container = timing_parameters(camera, dl1.image[0],
+                                         dl1.peakpos[0], hillas_container)
+    timing_container.prefix = ''
+    num_islands, membership = number_of_islands(camera, mask)
+    island_container = IslandContainer(
+        num_islands=num_islands,
+        island_membership=membership
+    )
 
     alt_pointing = event.mc.tel[telescope_id].altitude_raw * u.rad
     az_pointing = event.mc.tel[telescope_id].azimuth_raw * u.rad
@@ -181,7 +192,9 @@ def calculate_image_features(telescope_id, event, dl1, config):
         leakage=leakage_container,
         hillas=hillas_container,
         concentration=concentration_container,
-        pointing=pointing_container
+        pointing=pointing_container,
+        timing=timing_container,
+        islands=island_container
     )
 
 
