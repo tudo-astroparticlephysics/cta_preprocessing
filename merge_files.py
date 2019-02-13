@@ -34,7 +34,7 @@ def main(input_pattern, output_file, verify, n_jobs, chunk_size, hdf_format):
     input_files = glob.glob(input_pattern)
     print(f'Found {len(input_files)} files.')
     if len(input_files) == 0:
-        print(f'No files found. for pattern {input_folder}*.simtel.gz Aborting')
+        print(f'No files found for pattern {input_pattern} Aborting')
         return
 
     if os.path.exists(output_file):

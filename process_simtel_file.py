@@ -125,7 +125,7 @@ def process_file(input_file, n_events=-1, silent=False, n_jobs=2):
     telescope_event_containers = [item for sublist in nested_tel_events for item in sublist] 
     
     mc_header_container = source.mc_header_information
-    mc_header_container.prefix=''
+    mc_header_container.prefix='mc'
     
     run_info_container = RunInfoContainer(run_id=array_event_containers[0].run_id, mc=mc_header_container)
     # from IPython import embed; embed()
