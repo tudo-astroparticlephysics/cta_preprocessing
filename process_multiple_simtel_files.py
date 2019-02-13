@@ -1,8 +1,9 @@
+import os
+import glob
+
 import click
 import numpy as np
 from tqdm import tqdm
-import os
-import glob
 from joblib import delayed, Parallel
 from process_simtel_file import process_file, write_result_to_file
 
@@ -44,9 +45,9 @@ def main(input_pattern, output_folder, n_events, n_jobs, overwrite):
     n_chunks = (len(input_files) // chunksize) + 1
     chunks = np.array_split(input_files, n_chunks)
 
-    with Parallel(n_jobs=n_jobs, verbose=50) as parallel:
+    with Parallel(n_jobs=n_jobs, verbose=150, backend='multiprocessing') as parallel:
         for chunk in tqdm(chunks):
-            results = parallel(delayed(process_file)(f, n_events=n_events) for f in chunk)
+            results = parallel(delayed(process_file)(f, n_events=n_events, n_jobs=1) for f in chunk)
                     #   parallel(delayed(process_file)(f, reco_algorithm=reco_algorithm, n_events=n_events, silent=True, return_input_file=True) for f in chunk)
             for input_file, r in zip(input_files, results):
                 # from IPython import embed; embed()
