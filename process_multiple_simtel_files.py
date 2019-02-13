@@ -48,9 +48,7 @@ def main(input_pattern, output_folder, n_events, n_jobs, overwrite):
     with Parallel(n_jobs=n_jobs, verbose=150, backend='multiprocessing') as parallel:
         for chunk in tqdm(chunks):
             results = parallel(delayed(process_file)(f, n_events=n_events, n_jobs=1) for f in chunk)
-                    #   parallel(delayed(process_file)(f, reco_algorithm=reco_algorithm, n_events=n_events, silent=True, return_input_file=True) for f in chunk)
             for input_file, r in zip(input_files, results):
-                # from IPython import embed; embed()
                 run_info_container, array_events, telescope_events = r
                 output_file = output_file_for_input_file(input_file)
                 write_result_to_file(run_info_container, array_events, telescope_events, output_file)
