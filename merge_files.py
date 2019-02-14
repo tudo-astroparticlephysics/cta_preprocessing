@@ -1,4 +1,3 @@
-import fact.io
 import click
 import os
 import glob
@@ -24,7 +23,7 @@ from colorama import Fore, Style
 @click.option('-f', '--hdf_format', default='tables', type=click.Choice(['tables', 'h5py']))
 def main(input_pattern, output_file, verify, n_jobs, chunk_size, hdf_format):
     """
-    Process multiple simtel files gievn as INPUT_FILES into one hdf5 file saved in OUTPUT_FILE.
+    Merge multiple hdf5 files matched by INPUT_PATTERN into one hdf5 file saved in OUTPUT_FILE.
     The hdf5 file will contain three groups. 'runs', 'array_events', 'telescope_events'.
 
     These files can be put into the classifier tools for learning.
@@ -59,6 +58,8 @@ def main(input_pattern, output_file, verify, n_jobs, chunk_size, hdf_format):
                 hdf_store.append('telescope_events', telescope_events)
 
     else:
+        
+        import fact.io
         for chunk in tqdm(chunks):
             results = [read_file(f) for f in chunk]
 
@@ -97,6 +98,7 @@ def verify_file(input_file_path, format='tables'):
             array_events = pd.read_hdf(input_file_path, 'array_events')
             runs = pd.read_hdf(input_file_path, 'runs')
         else:
+            import fact.io
             telescope_events = fact.io.read_data(input_file_path, key='telescope_events')
             array_events = fact.io.read_data(input_file_path, key='array_events')
             runs = fact.io.read_data(input_file_path, key='runs')
@@ -106,9 +108,10 @@ def verify_file(input_file_path, format='tables'):
         array_events.set_index(['run_id', 'array_event_id'], drop=True, verify_integrity=True, inplace=True)
         
         print(Fore.GREEN + Style.BRIGHT + f'File "{input_file_path}" seems fine.   ✔ ')
-    
+        print(Style.RESET_ALL)   
     except:
         print(Fore.RED + f'File {input_file_path} seems to be broken. \n')
+        print(Style.RESET_ALL)   
         import sys, traceback
         traceback.print_exc(file=sys.stdout)
 

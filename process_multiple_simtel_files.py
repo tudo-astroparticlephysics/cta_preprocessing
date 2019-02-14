@@ -6,6 +6,7 @@ import numpy as np
 from tqdm import tqdm
 from joblib import delayed, Parallel
 from process_simtel_file import process_file, write_result_to_file
+from colorama import Fore, Style
 
 
 @click.command()
@@ -19,7 +20,9 @@ def main(input_pattern, output_folder, n_events, n_jobs, overwrite):
     process simtel files given as mathcin INPUT_PATTERN into several hdf5 files saved in OUTPUT_FOLDER
     with the same filename as the input but with .h5 extension.
     '''
-
+    if not input_pattern.endswith('simtel.gz'):
+        print(Fore.RED + Style.BRIGHT + f'WARNING. Pattern does not end with file extension (simtel.gz). More files might be matched.')
+        print(Style.RESET_ALL)
     input_files = glob.glob(input_pattern)
     print(f'Found {len(input_files)} files matching pattern.')
 
@@ -45,14 +48,19 @@ def main(input_pattern, output_folder, n_events, n_jobs, overwrite):
     n_chunks = (len(input_files) // chunksize) + 1
     chunks = np.array_split(input_files, n_chunks)
 
-    with Parallel(n_jobs=n_jobs, verbose=150, backend='multiprocessing') as parallel:
+    with Parallel(n_jobs=n_jobs, verbose=1, backend='multiprocessing') as parallel:
         for chunk in tqdm(chunks):
             results = parallel(delayed(process_file)(f, n_events=n_events, n_jobs=1) for f in chunk)
-            for input_file, r in zip(input_files, results):
+            if len(results) != len(chunk):
+                print(Fore.RED + Style.BRIGHT+'WARNING. One or more files failed to process in this chunk.')
+
+            assert len(results) == len(chunk)
+
+            for input_file, r in zip(chunk, results):
                 run_info_container, array_events, telescope_events = r
                 output_file = output_file_for_input_file(input_file)
-                write_result_to_file(run_info_container, array_events, telescope_events, output_file)
                 print(f'processed file {input_file}, writing to {output_file}')
+                write_result_to_file(run_info_container, array_events, telescope_events, output_file)
             
 
 if __name__ == '__main__':

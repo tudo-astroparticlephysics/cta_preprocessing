@@ -113,7 +113,7 @@ def process_file(input_file, n_events=-1, silent=False, n_jobs=2):
     
     event_iterator = filter(lambda e: len(e.dl0.tels_with_data) > 1, source)
 
-    with Parallel(n_jobs=n_jobs, verbose=150, prefer='processes') as parallel:
+    with Parallel(n_jobs=n_jobs, verbose=50, prefer='processes') as parallel:
         p = parallel(delayed(partial(process_parallel, calibrator=calibrator))(copy.deepcopy(e)) for e in event_iterator)
         # result =  [a for a in tqdm(pool.imap(partial(process_parallel, calibrator=calibrator) , event_iterator, chunksize=10))]
         result = [a for a in tqdm(p)]
