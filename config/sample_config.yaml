@@ -9,10 +9,6 @@ allowed_cameras:
   - NectarCam
   - DigiCam
 
-reco_algorithm: planes
-integrator : NeighbourPeakIntegrator
-cleaning_method: tailcuts_clean
-
 names_to_id:
  LSTCam: 1
  NectarCam: 2
@@ -25,6 +21,10 @@ types_to_id:
   MST: 2
   SST: 3
 
+# processing
+integrator : NeighbourPeakIntegrator
+
+cleaning_method: tailcuts_clean
 cleaning_level:   ## Different algorithms need different parameters!
   LSTCam:
     - 3.5
@@ -39,10 +39,8 @@ cleaning_level:   ## Different algorithms need different parameters!
     - 4.5
     - 2
 
+# cuts
 min_num_islands: 8
-
 min_width: 30
-
 min_length: 70
-
 min_number_of_valid_triggered_cameras: 2
