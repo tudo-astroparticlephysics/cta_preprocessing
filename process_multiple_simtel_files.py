@@ -17,7 +17,11 @@ from colorama import Fore, Style
 @click.argument('config_file',
                 type=click.Path(file_okay=True)
                 )
-def main(input_pattern, output_folder, config_file):
+@click.option('-n', '--n_events', default=-1, help='number of events to process in each file.')
+@click.option('-j', '--n_jobs', default=1, help='number of jobs to start. this is usefull when passing more than one simtel file.')
+@click.option('--overwrite/--no-overwrite', default=False, help='If false (default) will only process non-existing filenames')
+@click.option('-v', '--verbose', default=1, help='specifies the output being shown during processing')
+def main(input_pattern, output_folder, config_file, n_events, n_jobs, overwrite, verbose):
     '''
     process simtel files given as matching INPUT_PATTERN into several
     hdf5 files saved in OUTPUT_FOLDER
@@ -39,7 +43,7 @@ def main(input_pattern, output_folder, config_file):
                             os.path.basename(input_file).replace('simtel.gz',
                                                                  'h5'))
 
-    if not config.overwrite:
+    if not overwrite:
         input_files = list(filter(lambda v: not os.path.exists(output_file_for_input_file(v)),
                                   input_files))
         print(f'''Preprocessing on {len(input_files)}
@@ -58,9 +62,9 @@ def main(input_pattern, output_folder, config_file):
     chunks = np.array_split(input_files, n_chunks)
 
 
-    with Parallel(n_jobs=config.n_jobs, verbose=1, backend='multiprocessing') as parallel:
+    with Parallel(n_jobs=n_jobs, verbose=verbose, backend='multiprocessing') as parallel:
         for chunk in tqdm(chunks):
-            results = parallel(delayed(process_file)(f, config) for f in chunk)
+            results = parallel(delayed(process_file)(f, config, n_jobs=n_jobs, n_events=1, verbose=verbose) for f in chunk)  # 1 because kai
             if len(results) != len(chunk):
                 print(Fore.RED + Style.BRIGHT+'WARNING. One or more files failed to process in this chunk.')
 

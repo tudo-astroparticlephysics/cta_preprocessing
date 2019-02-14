@@ -34,7 +34,11 @@ class ReconstructionError(Exception):
 @click.argument('config_file',
                 type=click.Path(file_okay=True)
                 )
-def main(input_file, output_file, config_file):
+@click.option('-n', '--n_events', default=-1, help='number of events to process in each file.')
+@click.option('-j', '--n_jobs', default=1, help='number of jobs to start. this is usefull when passing more than one simtel file.')
+@click.option('--overwrite/--no-overwrite', default=False, help='If false (default) will only process non-existing filenames')
+@click.option('-v', '--verbose', default=1, help='specifies the output being shown during processing')
+def main(input_file, output_file, config_file, n_events, n_jobs, overwrite, verbose):
     '''
     process simtel files given as INPUT_FILE into one hdf5 file
     saved in OUTPUT_FILE.
@@ -48,7 +52,7 @@ def main(input_file, output_file, config_file):
     config = PREPConfig(config_file)
     print(f'processing file {input_file}, writing to {output_file}')
 
-    if not config.overwrite:
+    if not overwrite:
         if os.path.exists(output_file):
             print(f'Output file exists. Stopping.')
             return
@@ -57,7 +61,7 @@ def main(input_file, output_file, config_file):
             print(f'Output file exists. Overwriting.')
             os.remove(output_file)
 
-    run_info_container, array_events, telescope_events = process_file(input_file, config)
+    run_info_container, array_events, telescope_events = process_file(input_file, config, n_jobs=n_jobs, n_events=n_events, verbose=verbose)
     write_result_to_file(run_info_container,
                          array_events,
                          telescope_events,
@@ -105,10 +109,10 @@ def print_info(event):
     print(event.dl0.event_id)
 
 
-def process_file(input_file, config):
+def process_file(input_file, config, n_jobs=1, n_events=-1, verbose=1):
     source = EventSourceFactory.produce(
         input_url=input_file,
-        max_events=config.n_events if config.n_events > 1 else None,
+        max_events=n_events if n_events > 1 else None,
     )
     calibrator = CameraCalibrator(
         eventsource=source,
@@ -121,8 +125,8 @@ def process_file(input_file, config):
     
     event_iterator = filter(lambda e: len(e.dl0.tels_with_data) > 1, source)
 
-    with Parallel(n_jobs=1# config.n_jobs,# als parameter hinzufügen
-                  verbose=config.verbose,
+    with Parallel(n_jobs=n_jobs,
+                  verbose=verbose,
                   prefer='processes') as parallel:
         p = parallel(delayed(partial(process_parallel, calibrator=calibrator, config=config))(copy.deepcopy(e)) for e in event_iterator)
         result = [a for a in tqdm(p)]
@@ -194,9 +198,9 @@ def calculate_image_features(telescope_id, event, dl1, config):
         concentration=concentration_container,
         pointing=pointing_container,
         timing=timing_container,
-        islands=island_container
-        #telescope_type_id=telescope_types_to_id[optics.tel_type] #  dict in config?
-        #camera_type_id=camera_names_to_id[camera.cam_id], # dict in config?
+        islands=island_container,
+        telescope_type_id=config.types_to_id[optics.tel_type], #  dict in config?
+        camera_type_id=config.names_to_id[camera.cam_id], # dict in config?
         focal_length=optics.equivalent_focal_length,
         mirror_area=optics.mirror_area,
     )

@@ -1,9 +1,7 @@
 # All needed entries with default (working) values for the script
 # This do not necessarily resemble good values physics wise
 
-
-overwrite: False
-
+chunksize: 50  # want this in the config or as cli parameter?
 
 # use this to choose specific telescope types
 allowed_cameras: 
@@ -26,16 +24,6 @@ types_to_id:
   LST: 1
   MST: 2
   SST: 3
-
-n_events: 50
-
-n_jobs: 2
-
-chunksize: 50
-
-silent: False
-
-verbose: 50
 
 cleaning_level:   ## Different algorithms need different parameters!
   LSTCam:
