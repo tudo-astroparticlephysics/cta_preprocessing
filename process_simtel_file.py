@@ -19,7 +19,6 @@ from ctapipe.image.cleaning import tailcuts_clean, number_of_islands
 from ctapipe.image.timing_parameters import timing_parameters
 from ctapipe.reco import HillasReconstructor
 
-
 from preprocessing.parameters import PREPConfig
 from preprocessing.containers import TelescopeParameterContainer, ArrayEventContainer, RunInfoContainer, IslandContainer
 from ctapipe.io.containers import TelescopePointingContainer
@@ -122,7 +121,7 @@ def process_file(input_file, config):
     
     event_iterator = filter(lambda e: len(e.dl0.tels_with_data) > 1, source)
 
-    with Parallel(n_jobs=config.n_jobs,
+    with Parallel(n_jobs=1# config.n_jobs,# als parameter hinzufügen
                   verbose=config.verbose,
                   prefer='processes') as parallel:
         p = parallel(delayed(partial(process_parallel, calibrator=calibrator, config=config))(copy.deepcopy(e)) for e in event_iterator)
@@ -135,10 +134,10 @@ def process_file(input_file, config):
     telescope_event_containers = [item for sublist in nested_tel_events for item in sublist]
 
     mc_header_container = source.mc_header_information
-    mc_header_container.prefix=''
+    mc_header_container.prefix='mc'
     
     run_info_container = RunInfoContainer(run_id=array_event_containers[0].run_id, mc=mc_header_container)
-    
+    # from IPython import embed; embed()
     return run_info_container, array_event_containers, telescope_event_containers
 
 
@@ -182,10 +181,10 @@ def calculate_image_features(telescope_id, event, dl1, config):
 
     alt_pointing = event.mc.tel[telescope_id].altitude_raw * u.rad
     az_pointing = event.mc.tel[telescope_id].azimuth_raw * u.rad
-    pointing_container = TelescopePointingContainer(azimuth=az_pointing,
-                                                    altitude=alt_pointing,
-                                                    prefix='')
+    pointing_container = TelescopePointingContainer(azimuth=az_pointing, altitude=alt_pointing, prefix='pointing')
 
+    optics = event.inst.subarray.tels[telescope_id].optics
+    
     return TelescopeParameterContainer(
         telescope_id=telescope_id,
         run_id=run_id,
@@ -196,6 +195,10 @@ def calculate_image_features(telescope_id, event, dl1, config):
         pointing=pointing_container,
         timing=timing_container,
         islands=island_container
+        #telescope_type_id=telescope_types_to_id[optics.tel_type] #  dict in config?
+        #camera_type_id=camera_names_to_id[camera.cam_id], # dict in config?
+        focal_length=optics.equivalent_focal_length,
+        mirror_area=optics.mirror_area,
     )
 
 

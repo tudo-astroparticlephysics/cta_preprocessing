@@ -32,6 +32,9 @@ class TelescopeParameterContainer(Container):
                                                     'Distance from telescope to reconstructed impact position',
                                                     unit=u.m)
 
+    camera_type_id = Field(np.nan, 'An ID encoding the camera type (SCT, ASTRI, CHEC, ...)')
+    telescope_type_id = Field(np.nan, 'An ID encoding the telescope type (MST, SST, LST)')
+
     mirror_area = Field(np.nan, 'Mirror Area', unit=u.m**2)
     focal_length = Field(np.nan, 'focal length', unit=u.m)
 
@@ -57,5 +60,4 @@ class ArrayEventContainer(Container):
     num_triggered_lst = Field(np.nan, 'Number of triggered LSTs')
     num_triggered_mst = Field(np.nan, 'Number of triggered MSTs')
     num_triggered_sst = Field(np.nan, 'Number of triggered SSTs')
-
 
