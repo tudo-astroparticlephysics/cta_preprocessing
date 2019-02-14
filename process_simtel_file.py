@@ -150,15 +150,24 @@ def calculate_image_features(telescope_id, event, dl1, config):
     run_id = event.r0.obs_id
     camera = event.inst.subarray.tels[telescope_id].camera
 
-    # This does not generalize well to other cleaning methods
-    boundary_thresh, picture_thresh, min_number_picture_neighbors = config.cleaning_level[camera.cam_id]
-    mask = tailcuts_clean(
-        camera,
-        dl1.image[0],
-        boundary_thresh=boundary_thresh,
-        picture_thresh=picture_thresh,
-        min_number_picture_neighbors=min_number_picture_neighbors
-    )
+    # Make sure to adapt cleaning level to the used algorithm
+    # tailcuts: picture_thresh, picture_thresh, min_number_picture_neighbors
+    # fact: picture_threshold, boundary_threshold, min_number_neighbors, time_limit
+    valid_cleaning_methods = ['tailcuts_clean', 'fact_image_cleaning']
+
+    if config.cleaning_method == 'tailcuts_clean':
+        mask = tailcuts_clean(
+            camera,
+            dl1.image[0],
+            *config.cleaning_level[camera.cam_id]
+        )
+    elif config.cleaning_method == 'fact_image_cleaning':
+        mask = fact_image_cleaning(
+            camera,
+            dl1.image[0],
+            dl1.peakpos[0],
+            *config.cleaning_level[camera.cam_id]
+        )
 
     cleaned = dl1.image[0].copy()
     cleaned[~mask] = 0
