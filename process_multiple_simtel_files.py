@@ -21,6 +21,7 @@ from colorama import Fore, Style
 @click.option('-j', '--n_jobs', default=1, help='number of jobs to start. this is usefull when passing more than one simtel file.')
 @click.option('--overwrite/--no-overwrite', default=False, help='If false (default) will only process non-existing filenames')
 @click.option('-v', '--verbose', default=1, help='specifies the output being shown during processing')
+@click.option('-c', '--chunksize', default=1, help='number of files per chunk')
 def main(input_pattern, output_folder, config_file, n_events, n_jobs, overwrite, verbose):
     '''
     process simtel files given as matching INPUT_PATTERN into several
@@ -58,7 +59,7 @@ def main(input_pattern, output_folder, config_file, n_events, n_jobs, overwrite,
         print('No files to process')
         return
 
-    n_chunks = (len(input_files) // config.chunksize) + 1
+    n_chunks = (len(input_files) // chunksize) + 1
     chunks = np.array_split(input_files, n_chunks)
 
 

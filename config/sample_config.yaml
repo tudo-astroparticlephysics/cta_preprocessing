@@ -1,9 +1,6 @@
 # All needed entries with default (working) values for the script
 # This do not necessarily resemble good values physics wise
 
-chunksize: 50  # want this in the config or as cli parameter?
-
-# use this to choose specific telescope types
 allowed_cameras: 
   - LSTCam
   - NectarCam
@@ -21,7 +18,6 @@ types_to_id:
   MST: 2
   SST: 3
 
-# processing
 integrator : NeighbourPeakIntegrator
 
 cleaning_method: tailcuts_clean
@@ -39,8 +35,3 @@ cleaning_level:   ## Different algorithms need different parameters!
     - 4.5
     - 2
 
-# cuts
-min_num_islands: 8
-min_width: 30
-min_length: 70
-min_number_of_valid_triggered_cameras: 2

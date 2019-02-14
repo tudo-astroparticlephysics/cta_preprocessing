@@ -3,17 +3,12 @@ import yaml
 
 class PREPConfig(object):
     __slots__ = (
-        'chunksize',
         'names_to_id',
         'types_to_id',
         'allowed_cameras',
         'integrator',
         'cleaning_method',
         'cleaning_level',
-        'min_num_islands',
-        'min_width',
-        'min_length',
-        'min_number_of_valid_triggered_cameras',
     )
 
     def __init__(self, config_file):
