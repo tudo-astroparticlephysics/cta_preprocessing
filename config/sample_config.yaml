@@ -1,0 +1,37 @@
+# All needed entries with default (working) values for the script
+# This do not necessarily resemble good values physics wise
+
+allowed_cameras: 
+  - LSTCam
+  - NectarCam
+  - DigiCam
+
+names_to_id:
+ LSTCam: 1
+ NectarCam: 2
+ FlashCam: 3
+ DigiCam: 4
+ CHEC: 5
+
+types_to_id:
+  LST: 1
+  MST: 2
+  SST: 3
+
+integrator : NeighbourPeakIntegrator
+
+cleaning_method: tailcuts_clean
+cleaning_level:   ## Different algorithms need different parameters!
+  LSTCam:
+    - 3.5
+    - 7.5
+    - 2
+  NectarCam:
+    - 3
+    - 5.5
+    - 2
+  DigiCam:
+    - 2
+    - 4.5
+    - 2
+
