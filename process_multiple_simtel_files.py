@@ -14,8 +14,9 @@ from colorama import Fore, Style
 @click.argument('output_folder', type=click.Path(dir_okay=True, file_okay=False))
 @click.option('-n', '--n_events', default=-1, help='number of events to process in each file.')
 @click.option('-j', '--n_jobs', default=1, help='number of jobs to start. this is usefull when passing more than one simtel file.')
+@click.option('-c', '--chunksize', default=24, help='how many files before before chunk gets written to disk')
 @click.option('--overwrite/--no-overwrite', default=False, help='If false (default) will only process non-existing filenames')
-def main(input_pattern, output_folder, n_events, n_jobs, overwrite):
+def main(input_pattern, output_folder, n_events, n_jobs, chunksize,  overwrite):
     '''
     process simtel files given as mathcin INPUT_PATTERN into several hdf5 files saved in OUTPUT_FOLDER
     with the same filename as the input but with .h5 extension.
@@ -44,7 +45,6 @@ def main(input_pattern, output_folder, n_events, n_jobs, overwrite):
     if len(input_files) < 1:
         print('No files to process')
         return
-    chunksize = 20
     n_chunks = (len(input_files) // chunksize) + 1
     chunks = np.array_split(input_files, n_chunks)
 
@@ -57,11 +57,14 @@ def main(input_pattern, output_folder, n_events, n_jobs, overwrite):
             assert len(results) == len(chunk)
 
             for input_file, r in zip(chunk, results):
-                run_info_container, array_events, telescope_events = r
-                output_file = output_file_for_input_file(input_file)
-                print(f'processed file {input_file}, writing to {output_file}')
-                write_result_to_file(run_info_container, array_events, telescope_events, output_file)
-            
+                if r:
+                    run_info_container, array_events, telescope_events = r
+                    output_file = output_file_for_input_file(input_file)
+                    print(f'processed file {input_file}, writing to {output_file}')
+                    write_result_to_file(run_info_container, array_events, telescope_events, output_file)
+                else:
+                    print(f'could not process file {input_file}. job did not return a result')
+
 
 if __name__ == '__main__':
     # pylint: disable=no-value-for-parameter

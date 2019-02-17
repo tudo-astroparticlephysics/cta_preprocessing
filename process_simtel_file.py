@@ -68,9 +68,13 @@ def main(input_file, output_file, n_events, n_jobs, overwrite):
             print(f'Output file exists. Overwriting.')
             os.remove(output_file)
 
-    run_info_container, array_events, telescope_events = process_file(input_file, n_events=n_events, n_jobs=n_jobs)
-    write_result_to_file(run_info_container, array_events, telescope_events, output_file)
-
+    r = process_file(input_file, n_events=n_events, n_jobs=n_jobs)
+    if r:
+        run_info_container, array_events, telescope_events = r
+        write_result_to_file(run_info_container, array_events, telescope_events, output_file)
+    else:
+        from colorama import Fore
+        print(Fore.RED + 'Could not process File.')
 
 def write_result_to_file(run_info_container, array_events, telescope_events, output_file, mode='a'):
     with HDF5TableWriter(output_file, mode=mode, group_name='', add_prefix=True) as h5_table:
@@ -96,10 +100,15 @@ def print_info(event):
     print(event.dl0.event_id)
 
 def process_file(input_file, n_events=-1, silent=False, n_jobs=2):
-    source = EventSourceFactory.produce(
-        input_url=input_file,
-        max_events=n_events if n_events > 1 else None,
-    )
+    try:
+        source = EventSourceFactory.produce(
+            input_url=input_file,
+            max_events=n_events if n_events > 1 else None,
+        )
+    except (EOFError, StopIteration):
+        print(f'Could not produce eventsource. File might be truncated? {input_file}')
+        return None
+
     calibrator = CameraCalibrator(
         eventsource=source,
         r1_product='HESSIOR1Calibrator',
@@ -113,9 +122,8 @@ def process_file(input_file, n_events=-1, silent=False, n_jobs=2):
     
     event_iterator = filter(lambda e: len(e.dl0.tels_with_data) > 1, source)
 
-    with Parallel(n_jobs=n_jobs, verbose=50, prefer='processes') as parallel:
+    with Parallel(n_jobs=n_jobs, verbose=0, prefer='processes') as parallel:
         p = parallel(delayed(partial(process_parallel, calibrator=calibrator))(copy.deepcopy(e)) for e in event_iterator)
-        # result =  [a for a in tqdm(pool.imap(partial(process_parallel, calibrator=calibrator) , event_iterator, chunksize=10))]
         result = [a for a in tqdm(p)]
     
     array_event_containers = [r[0] for r in result if r]
@@ -128,7 +136,6 @@ def process_file(input_file, n_events=-1, silent=False, n_jobs=2):
     mc_header_container.prefix='mc'
     
     run_info_container = RunInfoContainer(run_id=array_event_containers[0].run_id, mc=mc_header_container)
-    # from IPython import embed; embed()
     return run_info_container, array_event_containers, telescope_event_containers
 
 
