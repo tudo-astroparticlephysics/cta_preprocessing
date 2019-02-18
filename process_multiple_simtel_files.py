@@ -22,7 +22,7 @@ from colorama import Fore, Style
 @click.option('--overwrite/--no-overwrite', default=False, help='If false (default) will only process non-existing filenames')
 @click.option('-v', '--verbose', default=1, help='specifies the output being shown during processing')
 @click.option('-c', '--chunksize', default=1, help='number of files per chunk')
-def main(input_pattern, output_folder, config_file, n_events, n_jobs, overwrite, verbose):
+def main(input_pattern, output_folder, config_file, n_events, n_jobs, overwrite, verbose, chunksize):
     '''
     process simtel files given as matching INPUT_PATTERN into several
     hdf5 files saved in OUTPUT_FOLDER
