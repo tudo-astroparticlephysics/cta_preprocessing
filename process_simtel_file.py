@@ -57,7 +57,6 @@ def main(input_file, output_file, n_events, n_jobs, overwrite):
     See https://github.com/fact-project/classifier-tools
     '''
 
-    print(f'processing file {input_file}, writing to {output_file}')
     
     if not overwrite:
         if os.path.exists(output_file):
@@ -100,6 +99,7 @@ def print_info(event):
     print(event.dl0.event_id)
 
 def process_file(input_file, n_events=-1, silent=False, n_jobs=2):
+    print(f'processing file {input_file}')
     try:
         source = EventSourceFactory.produce(
             input_url=input_file,
@@ -134,10 +134,12 @@ def process_file(input_file, n_events=-1, silent=False, n_jobs=2):
     
     mc_header_container = source.mc_header_information
     mc_header_container.prefix='mc'
-    
-    run_info_container = RunInfoContainer(run_id=array_event_containers[0].run_id, mc=mc_header_container)
-    return run_info_container, array_event_containers, telescope_event_containers
+    if len(array_event_containers) > 0:    
+        run_info_container = RunInfoContainer(run_id=array_event_containers[0].run_id, mc=mc_header_container)
+        return run_info_container, array_event_containers, telescope_event_containers
 
+    print(f'Could not produce gather data from file. File might be truncated or just empty? {input_file}')
+    return None
 
 def calculate_image_features(telescope_id, event, dl1):
     array_event_id = event.dl0.event_id
