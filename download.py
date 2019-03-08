@@ -48,15 +48,11 @@ def get_links(type, password):
 
 
 @click.command()
-@click.argument(
-    'output_folder',
-    type=click.Path())
+@click.argument('output_folder', type=click.Path())
+@click.option('-p', '--password')
 @click.option(
-    '-p', '--password')
-@click.option(
-    '-t', '--type',
-    type=click.Choice(['electron', 'gamma', 'proton', 'gamma_diffuse']),
-    default='proton')
+    '-t', '--type', type=click.Choice(['electron', 'gamma', 'proton', 'gamma_diffuse']), default='proton'
+)
 def main(output_folder, password, type):
 
     links = get_links(type, password)
