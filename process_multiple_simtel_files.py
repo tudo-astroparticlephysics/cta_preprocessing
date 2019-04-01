@@ -54,50 +54,38 @@ def main(input_pattern, output_folder, config_file, n_events, n_jobs, overwrite,
     - cleaning levels per telescope type
     to use.
     '''
-    # pathlib to avoid issues like //
+    # pathlib for more robust path handling//
     logging.basicConfig(
-        filename=Path(output_folder, 'log.txt').as_posix(),
+        filename=Path(output_folder, 'log.txt').resolve().as_posix(),
         filemode='a+',
-        format='%(name)s - %(levelname)s - %(message)s',
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
         level=logging.DEBUG
     )
-    logging.info('Starting preprocessing')
 
     config = PREPConfig(config_file)
 
     if not input_pattern.endswith('simtel.gz'):
-        print(
-            Fore.RED
-            + Style.BRIGHT
-            + f'WARNING. Pattern does not end with file extension (simtel.gz). More files might be matched.'
-        )
-        print(Style.RESET_ALL)
         logging.warning(
             'WARNING. Pattern does not end with file extension (simtel.gz). More files might be matched.'
         )
 
     input_files = glob.glob(input_pattern)
-    print(f'Found {len(input_files)} files matching pattern.')
     logging.info(f'Found {len(input_files)} files matching pattern.')
 
     if len(input_files) == 0:
-        print(f'No files found. For pattern {input_pattern}. Aborting')
         logging.critical(f'No files found. For pattern {input_pattern}. Aborting')
         return
 
     def output_file_for_input_file(input_file):
         output_file = os.path.join(output_folder, os.path.basename(input_file).replace('simtel.gz', 'h5'))
-
         return output_file
 
     if not overwrite:
         input_files = list(filter(lambda v: not os.path.exists(output_file_for_input_file(v)), input_files))
-        print(f'Preprocessing on {len(input_files)} files that have no matching output')
         logging.info(f'Preprocessing on {len(input_files)} files that have no matching output')
     else:
         output_files = [output_file_for_input_file(f) for f in input_files]
         [os.remove(of) for of in output_files if os.path.exists(of)]
-        print('Preprocessing all found input_files' ' and overwriting existing output.')
         logging.warning('Preprocessing all found input_files' ' and overwriting existing output.')
 
     n_chunks = (len(input_files) // chunksize) + 1
@@ -120,7 +108,6 @@ def main(input_pattern, output_folder, config_file, n_events, n_jobs, overwrite,
                     write_result_to_file(run_info_container, array_events, telescope_events, output_file)
                 else:
                     logging.warning(f'could not process file {input_file}. job did not return a result')
-                    print(f'could not process file {input_file}. job did not return a result')
 
 
 if __name__ == '__main__':
