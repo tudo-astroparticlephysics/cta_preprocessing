@@ -54,6 +54,10 @@ def main(input_pattern, output_folder, config_file, n_events, n_jobs, overwrite,
     - cleaning levels per telescope type
     to use.
     '''
+    # workaround https://stackoverflow.com/questions/30861524/logging-basicconfig-not-creating-log-file-when-i-run-in-pycharm
+    for handler in logging.root.handlers[:]:
+        logging.root.removeHandler(handler)
+
     # pathlib for more robust path handling//
     logging.basicConfig(
         filename=Path(output_folder, 'log.txt').resolve().as_posix(),
