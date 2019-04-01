@@ -11,7 +11,7 @@ import os
 
 from joblib import delayed, Parallel
 
-from ctapipe.io.containers import TelescopePointingContainer
+from ctapipe.io.containers import TelescopePointingContainer, MCHeaderContainer
 from ctapipe.io.eventsource import EventSource, event_source
 from ctapipe.io import HDF5TableWriter
 from ctapipe.calib import CameraCalibrator
@@ -74,7 +74,7 @@ def main(input_file, output_file, config_file, n_events, n_jobs, overwrite, verb
     These files can be put into the classifier tools for learning.
     See https://github.com/fact-project/classifier-tools
     '''
-    logging.basicConfig(filename=Path(output_folder, 'log.txt').as_posix(), filemode='a+', format='%(name)s - %(levelname)s - %(message)s')
+    #logging.basicConfig(filename=Path(output_folder, 'log.txt').as_posix(), filemode='a+', format='%(name)s - %(levelname)s - %(message)s')  # folder not defined in simgle file processing
 
     config = PREPConfig(config_file)
     print(f'Processing file {input_file}, writing to {output_file}')
@@ -109,7 +109,10 @@ def write_result_to_file(run_info_container, array_events, telescope_events, out
     '''
     logging.debug(f'writing to file {output_file}')
     with HDF5TableWriter(output_file, mode=mode, group_name='', add_prefix=True) as h5_table:
-        run_info_container.mc.run_array_direction = 0
+        #print(run_info_container)
+        print(run_info_container.mc)
+        run_info_container.mc['run_array_direction'] = 0  #.run_array... für container
+
         h5_table.write('runs', [run_info_container, run_info_container.mc])
         for array_event in array_events:
             h5_table.write('array_events', [array_event, array_event.mc, array_event.reco])
@@ -180,8 +183,15 @@ def process_file(input_file, config, n_jobs=1, n_events=-1, verbose=1):
     # flatten according to https://stackoverflow.com/questions/952914
     telescope_event_containers = [item for sublist in nested_tel_events for item in sublist]
 
-    mc_header_container = source.mc_header_information
-    mc_header_container.prefix = 'mc'
+    mc_header_container = None
+    try:
+        mc_header_container = get_mc_header(source)
+        #mc_header_container = source.mc_header_information
+        #mc_header_container.prefix = 'mc'
+        logging.info('got header')
+    except Exception as e:
+        logging.error('couldnt get header')
+        logging.error(str(e))
 
     #run_info_container = RunInfoContainer(run_id=array_event_containers[0].run_id, mc=mc_header_container)
     if len(array_event_containers) > 0:
@@ -362,6 +372,17 @@ def process_event(event, calibrator, config):
     )
 
     return array_event, list(telescope_event_containers.values())
+
+
+def get_mc_header(event_source):
+    'returns a mc header from a simtel event source'
+    for last_event in event_source:
+        pass
+    # mc_header = {**last_event.mc, **last_event.mcheader}
+    # mc_header['run_array_direction'] = None
+    mc_header_container = MCHeaderContainer()
+    mc_header_container.update(**last_event.mcheader)
+    return mc_header_container
 
 
 if __name__ == '__main__':
