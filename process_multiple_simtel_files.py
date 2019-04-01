@@ -86,7 +86,7 @@ def main(input_pattern, output_folder, config_file, n_events, n_jobs, overwrite,
     else:
         output_files = [output_file_for_input_file(f) for f in input_files]
         [os.remove(of) for of in output_files if os.path.exists(of)]
-        logging.warning('Preprocessing all found input_files' ' and overwriting existing output.')
+        logging.info('Preprocessing all found input_files' ' and overwriting existing output.')
 
     n_chunks = (len(input_files) // chunksize) + 1
     chunks = np.array_split(input_files, n_chunks)
@@ -97,7 +97,7 @@ def main(input_pattern, output_folder, config_file, n_events, n_jobs, overwrite,
                 delayed(process_file)(f, config, n_jobs=1, n_events=n_events, verbose=verbose) for f in chunk
             )  # 1 because kai
             if len(results) != len(chunk):
-                logging.warning('One or more files failed to process in this chunk.')
+                logging.error('One or more files failed to process in this chunk.')
 
             assert len(results) == len(chunk)
 
@@ -107,7 +107,7 @@ def main(input_pattern, output_folder, config_file, n_events, n_jobs, overwrite,
                     output_file = output_file_for_input_file(input_file)
                     write_result_to_file(run_info_container, array_events, telescope_events, output_file)
                 else:
-                    logging.warning(f'could not process file {input_file}. job did not return a result')
+                    logging.error(f'could not process file {input_file}. job did not return a result')
 
 
 if __name__ == '__main__':
