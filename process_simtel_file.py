@@ -3,6 +3,7 @@ import click
 import numpy as np
 from tqdm import tqdm
 import astropy.units as u
+import logging
 
 import copy
 from functools import partial
@@ -11,7 +12,7 @@ import os
 from joblib import delayed, Parallel
 
 from ctapipe.io.containers import TelescopePointingContainer
-from ctapipe.io.eventsourcefactory import EventSourceFactory
+from ctapipe.io.eventsource import EventSource, event_source
 from ctapipe.io import HDF5TableWriter
 from ctapipe.calib import CameraCalibrator
 from ctapipe.image.hillas import hillas_parameters, HillasParameterizationError
@@ -27,7 +28,6 @@ from preprocessing.containers import (
     RunInfoContainer,
     IslandContainer,
 )
-from log import write_to_log
 
 
 class ReconstructionError(Exception):
@@ -74,30 +74,40 @@ def main(input_file, output_file, config_file, n_events, n_jobs, overwrite, verb
     These files can be put into the classifier tools for learning.
     See https://github.com/fact-project/classifier-tools
     '''
+    logging.basicConfig(filename=Path(output_folder, 'log.txt').as_posix(), filemode='a+', format='%(name)s - %(levelname)s - %(message)s')
 
     config = PREPConfig(config_file)
     print(f'Processing file {input_file}, writing to {output_file}')
+    logging.info(f'Processing file {input_file}, writing to {output_file}')
 
     if not overwrite:
         if os.path.exists(output_file):
             print(f'Output file exists. Stopping.')
+            logging.warning(f'Output file exists. Stopping.')
             return
     else:
         if os.path.exists(output_file):
             print(f'Output file exists. Overwriting.')
+            logging.warning(f'Output file exists. Overwriting.')
             os.remove(output_file)
 
-    run_info_container, array_events, telescope_events = process_file(
+    r = process_file(
         input_file, config, n_jobs=n_jobs, n_events=n_events, verbose=verbose
     )
+    if r:
+        run_info_container, array_events, telescope_events = r
+        write_result_to_file(run_info_container, array_events, telescope_events, output_file)
 
-    write_result_to_file(run_info_container, array_events, telescope_events, output_file)
+    else:
+        logging.critical('could not process file')
+        print('could not process file')
 
 
 def write_result_to_file(run_info_container, array_events, telescope_events, output_file, mode='a'):
     '''Combines run_info, array_events and telescope_events
     into one file using the HDF5TableWriter.
     '''
+    logging.debug(f'writing to file {output_file}')
     with HDF5TableWriter(output_file, mode=mode, group_name='', add_prefix=True) as h5_table:
         run_info_container.mc.run_array_direction = 0
         h5_table.write('runs', [run_info_container, run_info_container.mc])
@@ -119,18 +129,27 @@ def write_result_to_file(run_info_container, array_events, telescope_events, out
             )
 
 
-def process_parallel(event, calibrator, config, log_path='log.txt'):
+def process_parallel(event, calibrator, config):
     try:
         return process_event(event, calibrator, config)
-    except ReconstructionError as e:
+    except Exception as e:
         print(e)
-        write_to_log(log_path, str(e))
+        print(type(e))
+        logging.error(str(e))
         pass
 
 
-def process_file(input_file, config, n_jobs=1, n_events=-1, verbose=1, log_path='log.txt'):
+def process_file(input_file, config, n_jobs=1, n_events=-1, verbose=1):
     print('process file:', input_file)
-    source = EventSourceFactory.produce(input_url=input_file, max_events=n_events if n_events > 1 else None)
+    logging.info('process file:', input_file)
+    try:
+        source = event_source(input_url=input_file, max_events=n_events if n_events > 1 else None)
+    except (EOFError, StopIteration) as e:
+        logging.error(str(e))
+        print(f'Could not produce eventsource. File might be truncated? {input_file}')
+
+        return None
+    logging.debug('defining calibrator, allowed_tels, event_iterator ')
     calibrator = CameraCalibrator(
         eventsource=source, r1_product='HESSIOR1Calibrator', extractor_product=config.integrator
     )
@@ -144,10 +163,11 @@ def process_file(input_file, config, n_jobs=1, n_events=-1, verbose=1, log_path=
 
     event_iterator = filter(lambda e: len(e.dl0.tels_with_data) > 1, source)
 
+    logging.debug(f'processing {input_file} in parallel with {n_jobs} jobs')
     with Parallel(n_jobs=n_jobs, verbose=verbose, prefer='processes') as parallel:
         # process events in parallel
         p = parallel(
-            delayed(partial(process_parallel, calibrator=calibrator, config=config, log_path='log.txt'))(
+            delayed(partial(process_parallel, calibrator=calibrator, config=config))(
                 copy.deepcopy(e)
             )
             for e in event_iterator
@@ -163,12 +183,19 @@ def process_file(input_file, config, n_jobs=1, n_events=-1, verbose=1, log_path=
     mc_header_container = source.mc_header_information
     mc_header_container.prefix = 'mc'
 
-    run_info_container = RunInfoContainer(run_id=array_event_containers[0].run_id, mc=mc_header_container)
+    #run_info_container = RunInfoContainer(run_id=array_event_containers[0].run_id, mc=mc_header_container)
+    if len(array_event_containers) > 0:
+        logging.debug('array event conatiner seems valid. returning containers')
+        run_info_container = RunInfoContainer(run_id=array_event_containers[0].run_id, mc=mc_header_container)
+        return run_info_container, array_event_containers, telescope_event_containers
 
-    return (run_info_container, array_event_containers, telescope_event_containers)
+    print(f'Could not produce gather data from file. File might be truncated or just empty? {input_file}')
+    logging.error(f'Could not produce gather data from file. File might be truncated or just empty? {input_file}')
+    return None
 
 
-def calculate_image_features(telescope_id, event, dl1, config, log_file='log.txt'):
+
+def calculate_image_features(telescope_id, event, dl1, config):
     ''' Performs cleaning and adds the following image parameters:
     - hillas
     - leakage
@@ -187,6 +214,7 @@ def calculate_image_features(telescope_id, event, dl1, config, log_file='log.txt
     camera = event.inst.subarray.tels[telescope_id].camera
 
     # might wanna make the parameter names more consistent between methods
+    logging.debug(f'performing {config.cleaning_method}')
     if config.cleaning_method == 'tailcuts_clean':
         boundary_thresh, picture_thresh, min_number_picture_neighbors = config.cleaning_level[camera.cam_id]
 
@@ -211,6 +239,7 @@ def calculate_image_features(telescope_id, event, dl1, config, log_file='log.txt
             time_limit=time_limit,
         )
 
+    logging.debug('calculating image features')
     cleaned = dl1.image[0].copy()
     cleaned[~mask] = 0
     hillas_container = hillas_parameters(camera, cleaned)
@@ -245,7 +274,7 @@ def calculate_image_features(telescope_id, event, dl1, config, log_file='log.txt
         pointing=pointing_container,
         timing=timing_container,
         islands=island_container,
-        telescope_type_id=config.types_to_id[optics.tel_type],
+        telescope_type_id=config.types_to_id[str(optics)],
         camera_type_id=config.names_to_id[camera.cam_id],
         focal_length=optics.equivalent_focal_length,
         mirror_area=optics.mirror_area,
@@ -264,7 +293,7 @@ def calculate_distance_to_core(tel_params, event, reconstruction_result):
         container.distance_to_reconstructed_core_position = d
 
 
-def process_event(event, calibrator, config, log_file='log.txt'):
+def process_event(event, calibrator, config):
     '''
     Processes one event.
     Calls calculate_image_features and perform a stereo hillas reconstruction.
@@ -277,27 +306,24 @@ def process_event(event, calibrator, config, log_file='log.txt'):
 
     telescope_event_containers = {}
     for telescope_id, dl1 in event.dl1.tel.items():
-        telescope_types.append(event.inst.subarray.tels[telescope_id].optics.tel_type)
-
+        telescope_types.append(str(event.inst.subarray.tels[telescope_id].optics))
+        print(telescope_id)
         try:
             telescope_event_containers[telescope_id] = calculate_image_features(
                 telescope_id, event, dl1, config
             )
-        except HillasParameterizationError:
-            write_to_log(log_path, 'Exception on array event ' + str(event.dl0.event_id))
-            write_to_log(log_path, 'HillasParametrizationError for telescope id ' + str(telescope_id))
-            write_to_log(log_path, str(e))
-            write_to_log(log_path, 'This Event will be skipped')
+        except HillasParameterizationError as e:
+            print('image features test')
+            print(e)
+            print(type(e))
+            logging.error(str(e))
             continue
 
     if len(telescope_event_containers) < 2:
-        write_to_log(log_path, 'Exception on array event ' + str(event.dl0.event_id))
-        write_to_log(log_path, str(e))
-        write_to_log(log_path, 'This Event will be skipped')
         raise ReconstructionError(
-            'Not enough telescopes for which ' 'Hillas parameters could be reconstructed.'
+            'Not enough telescopes for which Hillas parameters could be reconstructed. event id: str(event.dl0.event_id)'
         )
-
+    print('checking for nans')
     parameters = {tel_id: telescope_event_containers[tel_id].hillas for tel_id in telescope_event_containers}
     pointing_altitude = {
         tel_id: telescope_event_containers[tel_id].pointing.altitude for tel_id in telescope_event_containers
@@ -313,17 +339,16 @@ def process_event(event, calibrator, config, log_file='log.txt'):
         reconstruction_container.prefix = ''
         calculate_distance_to_core(telescope_event_containers, event, reconstruction_container)
     except Exception as e:
-        write_to_log(log_path, 'Exception on array event ' + str(event.dl0.event_id))
-        write_to_log(log_path, str(e))
         raise ReconstructionError(
-            'Not enough telescopes for which Hillas parameters could be reconstructed. (after removing nan widths)'
+            'Not enough telescopes for which Hillas parameters could be reconstructed (after removing nan widths). event id: str(event.dl0.event_id)'
         )
-
+    print('hillas done')
     mc_container = copy.deepcopy(event.mc)
     mc_container.tel = None
     mc_container.prefix = 'mc'
 
     counter = Counter(telescope_types)
+    print(counter)
     array_event = ArrayEventContainer(
         array_event_id=event.dl0.event_id,
         run_id=event.r0.obs_id,
