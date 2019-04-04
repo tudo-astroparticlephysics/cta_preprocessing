@@ -10,12 +10,20 @@ from preprocessing.parameters import PREPConfig
 from colorama import Fore, Style
 from pathlib import Path
 import logging
+from logging.config import dictConfig
+import yaml
 
 
 @click.command()
 @click.argument('input_pattern', type=str)
 @click.argument('output_folder', type=click.Path(dir_okay=True, file_okay=False))
 @click.argument('config_file', type=click.Path(file_okay=True))
+@click.option(
+    '-l',
+    '--logger_config_file',
+    default='logging_config.yaml',
+    help='Specify a yaml logger config file to tune console and file debugging',
+)
 @click.option('-n', '--n_events', default=-1, help='Number of events to process in each file.')
 @click.option(
     '-j',
@@ -30,7 +38,17 @@ import logging
 )
 @click.option('-v', '--verbose', default=1, help='specifies the output being shown during processing')
 @click.option('-c', '--chunksize', default=1, help='number of files per chunk')
-def main(input_pattern, output_folder, config_file, n_events, n_jobs, overwrite, verbose, chunksize):
+def main(
+    input_pattern,
+    output_folder,
+    config_file,
+    logger_config_file,
+    n_events,
+    n_jobs,
+    overwrite,
+    verbose,
+    chunksize,
+):
     '''
     Process simtel files given as matching
     'input_pattern'
@@ -54,17 +72,19 @@ def main(input_pattern, output_folder, config_file, n_events, n_jobs, overwrite,
     - cleaning levels per telescope type
     to use.
     '''
+    # defining the logger
     # workaround https://stackoverflow.com/questions/30861524/logging-basicconfig-not-creating-log-file-when-i-run-in-pycharm
     for handler in logging.root.handlers[:]:
         logging.root.removeHandler(handler)
-
-    # pathlib for more robust path handling//
-    logging.basicConfig(
-        filename=Path(output_folder, 'log.txt').resolve().as_posix(),
-        filemode='a+',
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        level=logging.DEBUG
-    )
+    # everything uses the root logger right now
+    # might want to use loggers per function? need to use the config everytime tho... or pass the logger object?
+    # logger = logging.getLogger(__name__)
+    try:
+        with open(logger_config_file, 'rb') as f:
+            config = yaml.safe_load(f)
+        dictConfig(config)
+    except Exception:
+        logging.warning('Could not set logger configuration.', exc_info=True)
 
     config = PREPConfig(config_file)
 
@@ -74,11 +94,12 @@ def main(input_pattern, output_folder, config_file, n_events, n_jobs, overwrite,
         )
 
     input_files = glob.glob(input_pattern)
-    logging.info(f'Found {len(input_files)} files matching pattern.')
 
     if len(input_files) == 0:
         logging.critical(f'No files found. For pattern {input_pattern}. Aborting')
         return
+    else:
+        logging.info(f'Found {len(input_files)} files matching pattern.')
 
     def output_file_for_input_file(input_file):
         output_file = os.path.join(output_folder, os.path.basename(input_file).replace('simtel.gz', 'h5'))
@@ -90,10 +111,11 @@ def main(input_pattern, output_folder, config_file, n_events, n_jobs, overwrite,
     else:
         output_files = [output_file_for_input_file(f) for f in input_files]
         [os.remove(of) for of in output_files if os.path.exists(of)]
-        logging.info('Preprocessing all found input_files' ' and overwriting existing output.')
+        logging.info('Preprocessing all found input_files and overwriting existing output.')
 
     n_chunks = (len(input_files) // chunksize) + 1
     chunks = np.array_split(input_files, n_chunks)
+    logging.debug(f'Splitted input_files in {n_chunks} chunks')
 
     with Parallel(n_jobs=n_jobs, verbose=verbose, backend='multiprocessing') as parallel:
         for chunk in tqdm(chunks):
