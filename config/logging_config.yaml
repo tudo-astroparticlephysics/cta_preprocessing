@@ -27,13 +27,7 @@ handlers:
         filename: errors.log
         encoding: utf8
 
-loggers:
-    my_module:
-        level: ERROR
-        handlers: [console]
-        propagate: no
-
 root:
-    level: DEBUG
+    level: INFO
     handlers: [console, info_file_handler, error_file_handler]
 ...

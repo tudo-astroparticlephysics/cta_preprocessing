@@ -1,5 +1,7 @@
 # cta_preprocessing
-Processing of CTA simtel files to hdf5 DL1 files.
+
+## About
+Processing of CTA simtel files to hdf5 dL1 files.
 
 The `process_multiple_simtel_files.py` script is a little command line tool to convert multiple simtel files
 into one hdf5 file for each simtel file.
@@ -7,10 +9,14 @@ The hdf5 files consist of the groups 'runs', 'array_events', 'telescope_events'.
 
 This hdf5 file will contain important monte carlo truths and image features as well as reconstructed directions and other stereo parameters.
 
+## Usage 
 Parameters for the processing of the simtel files can be specified via the 
 config file that needs to be provided.
 A sample config can be found at
 `config/sample_config.yaml`
+
+If you want to log into a file or display debug messages, you can also specify a config file for the root logger. A sample config that outputs to two files and the terminal can be fount at
+`config/logging_config.yaml`
 
 
 Call like this:
@@ -18,6 +24,7 @@ Call like this:
 Additional options are:
 
   ```
+  -l (--logger_config_file: (optional) config file to specify logging behaviour)
   -n (--n_events: events to process per file)
   -j (--n_jobs: jobs to start)
   --overwrite/--no-overwrite (whether to overwrite existing output files)
@@ -26,9 +33,18 @@ Additional options are:
   ```
 
 These files can then be merged via 
-`merge_files.py`
-and put into the classifier tools for machine learning.
-See https://github.com/fact-project/classifier-tools
+`merge_files.py` to receive a single file.
+
+
+## A "complete" Analysis
+Starting from the monte carlo simtel files:
+- Call `process_multiple_simtel_files.py` with parameters on a bunch of gamma and a bunch of proton files.
+- Merge gamma/protons via `merge_files.py` to get two files: one for gammas and one for protons
+- Use the [aict-tools](https://github.com/fact-project/aict-tools) or similar tools for machine learning (Split into train/test sets, train models for energy regression and gamma/hadron separation and apply these models on your test splits.)
+
+## Download
+Helper script to download Prod-3 monte carlo.
+Requires a password.
 
 
 ## Probably deprecated
