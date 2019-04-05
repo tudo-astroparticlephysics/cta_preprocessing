@@ -8,15 +8,10 @@ from joblib import Parallel, delayed
 from process_simtel_file import write_result_to_file
 from colorama import Fore, Style
 
+
 @click.command()
-@click.argument(
-    'input_pattern', type=str
-)
-@click.argument(
-    'output_file', type=click.Path(
-        dir_okay=False,
-        file_okay=True,
-))
+@click.argument('input_pattern', type=str)
+@click.argument('output_file', type=click.Path(dir_okay=False, file_okay=True))
 @click.option('--verify/--no-verify', default=False, help='Wether to verify the output file ')
 @click.option('-j', '--n_jobs', default=1, help='number of jobs to use for reading data')
 @click.option('-c', '--chunk_size', default=50, help='files per chunk')
@@ -58,21 +53,21 @@ def main(input_pattern, output_file, verify, n_jobs, chunk_size, hdf_format):
                 hdf_store.append('telescope_events', telescope_events)
 
     else:
-        
+
         import fact.io
+
         for chunk in tqdm(chunks):
             results = [read_file(f) for f in chunk]
 
             runs = pd.concat([r[0] for r in results])
             array_events = pd.concat([r[1] for r in results])
             telescope_events = pd.concat([r[2] for r in results])
-            
+
             sort_arrays_inplace(runs, array_events, telescope_events)
 
             fact.io.write_data(runs, output_file, key='runs', mode='a')
             fact.io.write_data(array_events, output_file, key='array_events', mode='a')
             fact.io.write_data(telescope_events, output_file, key='telescope_events', mode='a')
-
 
     if verify:
         verify_file(output_file, hdf_format)
@@ -99,22 +94,25 @@ def verify_file(input_file_path, format='tables'):
             runs = pd.read_hdf(input_file_path, 'runs')
         else:
             import fact.io
+
             telescope_events = fact.io.read_data(input_file_path, key='telescope_events')
             array_events = fact.io.read_data(input_file_path, key='array_events')
             runs = fact.io.read_data(input_file_path, key='runs')
 
         runs.set_index('run_id', drop=True, verify_integrity=True, inplace=True)
-        telescope_events.set_index(['run_id', 'array_event_id', 'telescope_id'], drop=True, verify_integrity=True, inplace=True)
+        telescope_events.set_index(
+            ['run_id', 'array_event_id', 'telescope_id'], drop=True, verify_integrity=True, inplace=True
+        )
         array_events.set_index(['run_id', 'array_event_id'], drop=True, verify_integrity=True, inplace=True)
-        
+
         print(Fore.GREEN + Style.BRIGHT + f'File "{input_file_path}" seems fine.   ✔ ')
-        print(Style.RESET_ALL)   
+        print(Style.RESET_ALL)
     except:
         print(Fore.RED + f'File {input_file_path} seems to be broken. \n')
-        print(Style.RESET_ALL)   
+        print(Style.RESET_ALL)
         import sys, traceback
-        traceback.print_exc(file=sys.stdout)
 
+        traceback.print_exc(file=sys.stdout)
 
 
 if __name__ == '__main__':
