@@ -4,7 +4,7 @@ version: 1
 disable_existing_loggers: False
 formatters:
     simple:
-        format: "%(levelname)s - %(asctime)s - %(name)s - %(message)s"
+        format: "%(levelname)s - %(asctime)s - %(name)s - %(module) - %(funcName) - %(message)s"
 
 handlers:
     console:
