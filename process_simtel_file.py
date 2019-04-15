@@ -151,7 +151,7 @@ def process_file(input_file, config, n_jobs=1, n_events=-1, verbose=1):
     except Exception:
         logging.critical('Unhandled error trying to get the event source', exc_info=True)
     calibrator = CameraCalibrator(
-        eventsource=source, r1_product='HESSIOR1Calibrator', extractor_product=config.integrator
+        eventsource=source, r1_product='HESSIOR1Calibrator', extractor_name=config.integrator
     )
 
     allowed_tels = [
