@@ -152,7 +152,7 @@ def process_file(input_file, config, n_jobs=1, n_events=-1, verbose=1):
         logging.critical('Unhandled error trying to get the event source', exc_info=True)
     calibrator = CameraCalibrator(
         eventsource=source, r1_product='HESSIOR1Calibrator', extractor_name=config.integrator
-    )
+    )## can remove r1 product and eventsource?
 
     allowed_tels = [
         id
@@ -161,11 +161,12 @@ def process_file(input_file, config, n_jobs=1, n_events=-1, verbose=1):
     ]
     source.allowed_tels = allowed_tels
     logging.info('Defined allowed telescopes')
-
+    
     # choose only events with at least one telescope
     event_iterator = filter(lambda e: len(e.dl0.tels_with_data) > 1, source)
 
-    with Parallel(n_jobs=n_jobs, verbose=verbose, prefer='processes') as parallel:
+    #with Parallel(n_jobs=n_jobs, verbose=verbose, prefer='processes') as parallel:
+    with Parallel(n_jobs=n_jobs, verbose=verbose, backend='loky') as parallel:
         p = parallel(
             delayed(partial(process_parallel, calibrator=calibrator, config=config))(copy.deepcopy(e))
             for e in event_iterator
@@ -215,10 +216,10 @@ def calculate_image_features(telescope_id, event, dl1, config):
     run_id = event.r0.obs_id
     telescope = event.inst.subarray.tels[telescope_id]
 
-    logging.debug(f'telescope properties: {telescope}')
+    #logging.info(f'telescope properties: {telescope}')
 
     # might want to make the parameter names more consistent between methods
-    logging.debug(f'performing {config.cleaning_method}')
+    #logging.info(f'performing {config.cleaning_method}')
     if config.cleaning_method == 'tailcuts_clean':
         boundary_thresh, picture_thresh, min_number_picture_neighbors = config.cleaning_level[
             telescope.camera.cam_id
@@ -237,7 +238,7 @@ def calculate_image_features(telescope_id, event, dl1, config):
         mask = fact_image_cleaning(
             telescope.camera,
             dl1.image[0],
-            dl1.peakpos[0],
+            dl1.pulse_time[0],
             boundary_threshhold=boundary_threshold,
             picture_threshold=picture_threshold,
             min_number_neighbors=min_number_neighbors,
@@ -256,7 +257,7 @@ def calculate_image_features(telescope_id, event, dl1, config):
     concentration_container = concentration(telescope.camera, dl1.image[0], hillas_container)
     concentration_container.prefix = ''
     logging.debug(f'getting timing information for event {array_event_id, telescope_id}')
-    timing_container = timing_parameters(telescope.camera, dl1.image[0], dl1.peakpos[0], hillas_container)
+    timing_container = timing_parameters(telescope.camera, dl1.image[0], dl1.pulse_time[0], hillas_container)
     timing_container.prefix = ''
     # membership missing for now as it causes problems with the hdf5tablewriter
     # probably useless for ML purposes anyway?
@@ -308,10 +309,13 @@ def process_event(event, calibrator, config):
     logging.info(f'processing event {event.dl0.event_id}')
     telescope_types = []
 
+    #logging.info('lets define the hillas reconstructor')
     hillas_reconstructor = HillasReconstructor()
-
+    #logging.info(hillas_reconstructor)
+    
+    #from IPython import embed; embed()
     calibrator.calibrate(event)
-
+    
     telescope_event_containers = {}
     for telescope_id, dl1 in event.dl1.tel.items():
         telescope_types.append(str(event.inst.subarray.tels[telescope_id].optics))
