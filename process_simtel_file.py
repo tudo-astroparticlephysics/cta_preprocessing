@@ -150,9 +150,9 @@ def process_file(input_file, config, n_jobs=1, n_events=-1, verbose=1):
         return None
     except Exception:
         logging.critical('Unhandled error trying to get the event source', exc_info=True)
-    calibrator = CameraCalibrator(
-        eventsource=source, r1_product='HESSIOR1Calibrator', extractor_name=config.integrator
-    )## can remove r1 product and eventsource?
+    calibrator = CameraCalibrator()
+    #    eventsource=source, r1_product='HESSIOR1Calibrator', extractor_name=config.integrator
+    #)## can remove r1 product and eventsource?
 
     allowed_tels = [
         id
@@ -179,9 +179,13 @@ def process_file(input_file, config, n_jobs=1, n_events=-1, verbose=1):
     # flatten according to https://stackoverflow.com/questions/952914
     telescope_event_containers = [item for sublist in nested_tel_events for item in sublist]
 
+    ## super hacky, change this pls (problem with forward vs backseeking bc all events are processed already)
     mc_header_container = None
+    mc_source = event_source(
+        input_url=input_file,
+        max_events=1)
     try:
-        mc_header_container = get_mc_header(source)
+        mc_header_container = get_mc_header(mc_source)
         mc_header_container.prefix = 'mc'
         logging.info(f'Got mc header for file {input_file}')
     except Exception:
@@ -216,10 +220,7 @@ def calculate_image_features(telescope_id, event, dl1, config):
     run_id = event.r0.obs_id
     telescope = event.inst.subarray.tels[telescope_id]
 
-    #logging.info(f'telescope properties: {telescope}')
-
     # might want to make the parameter names more consistent between methods
-    #logging.info(f'performing {config.cleaning_method}')
     if config.cleaning_method == 'tailcuts_clean':
         boundary_thresh, picture_thresh, min_number_picture_neighbors = config.cleaning_level[
             telescope.camera.cam_id
@@ -265,8 +266,10 @@ def calculate_image_features(telescope_id, event, dl1, config):
     num_islands, membership = number_of_islands(telescope.camera, mask)
     island_container = IslandContainer(num_islands=num_islands)
     island_container.prefix = ''
+    num_pixel_in_shower = mask.sum()
 
     logging.debug(f'getting pointing container for event {array_event_id, telescope_id}')
+    # ctapipe requires this to be rad
     pointing_container = TelescopePointingContainer(
         azimuth=event.mc.tel[telescope_id].azimuth_raw * u.rad,
         altitude=event.mc.tel[telescope_id].altitude_raw * u.rad,
@@ -287,7 +290,11 @@ def calculate_image_features(telescope_id, event, dl1, config):
         camera_type_id=config.names_to_id[telescope.camera.cam_id],
         focal_length=telescope.optics.equivalent_focal_length,
         mirror_area=telescope.optics.mirror_area,
+        num_pixel_in_shower = num_pixel_in_shower,
     )
+
+
+
 
 
 def calculate_distance_to_core(tel_params, event, reconstruction_result):
@@ -309,12 +316,8 @@ def process_event(event, calibrator, config):
     logging.info(f'processing event {event.dl0.event_id}')
     telescope_types = []
 
-    #logging.info('lets define the hillas reconstructor')
     hillas_reconstructor = HillasReconstructor()
-    #logging.info(hillas_reconstructor)
-    
-    #from IPython import embed; embed()
-    calibrator.calibrate(event)
+    calibrator(event)
     
     telescope_event_containers = {}
     for telescope_id, dl1 in event.dl1.tel.items():

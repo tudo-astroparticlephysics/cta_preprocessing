@@ -28,6 +28,7 @@ class TelescopeParameterContainer(Container):
     concentration = Field(ConcentrationContainer(), 'ConcentrationContainer')
     timing = Field(TimingParametersContainer(), 'TimingParametersContainer')
     islands = Field(IslandContainer(), 'IslandContainer')
+    num_pixel_in_shower = Field(np.nan, 'number of pixels after cleaning')
 
     pointing = Field(TelescopePointingContainer(), 'pointing information')
 

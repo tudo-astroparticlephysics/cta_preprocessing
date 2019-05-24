@@ -116,11 +116,11 @@ def main(
     n_chunks = (len(input_files) // chunksize) + 1
     chunks = np.array_split(input_files, n_chunks)
     logging.debug(f'Splitted input_files in {n_chunks} chunks')
-
+#, prefer="threads" ??
     with Parallel(n_jobs=n_jobs, verbose=verbose, backend='loky') as parallel:
         for chunk in tqdm(chunks):
             results = parallel(
-                delayed(process_file)(f, config, n_jobs=4, n_events=n_events, verbose=verbose) for f in chunk
+                delayed(process_file)(f, config, n_jobs=1, n_events=n_events, verbose=verbose) for f in chunk
             )  # 1 because kai
             if len(results) != len(chunk):
                 logging.error('One or more files failed to process in this chunk.')
