@@ -10,7 +10,7 @@ import os
 
 from joblib import delayed, Parallel
 
-from ctapipe.io.eventsourcefactory import EventSourceFactory
+from ctapipe.io import SimTelEventSource
 from ctapipe.io import HDF5TableWriter
 from ctapipe.calib import CameraCalibrator
 from ctapipe.image.hillas import hillas_parameters, HillasParameterizationError
@@ -101,7 +101,7 @@ def print_info(event):
 def process_file(input_file, n_events=-1, silent=False, n_jobs=2):
     print(f'processing file {input_file}')
     try:
-        source = EventSourceFactory.produce(
+        source = SimTelEventSource(
             input_url=input_file,
             max_events=n_events if n_events > 1 else None,
         )
