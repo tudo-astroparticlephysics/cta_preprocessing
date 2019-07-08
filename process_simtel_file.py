@@ -17,7 +17,7 @@ from ctapipe.image.hillas import hillas_parameters, HillasParameterizationError
 from ctapipe.image import leakage, concentration
 from ctapipe.image.cleaning import tailcuts_clean
 from ctapipe.reco import HillasReconstructor
-
+from ctapipe.reco.HillasReconstructor import InvalidWidthException
 from preprocessing.containers import TelescopeParameterContainer, ArrayEventContainer, RunInfoContainer
 from ctapipe.io.containers import  TelescopePointingContainer
 
@@ -105,14 +105,12 @@ def process_file(input_file, n_events=-1, silent=False, n_jobs=2):
             input_url=input_file,
             max_events=n_events if n_events > 1 else None,
         )
+        
     except (EOFError, StopIteration):
         print(f'Could not produce eventsource. File might be truncated? {input_file}')
         return None
 
     calibrator = CameraCalibrator(
-        eventsource=source,
-        r1_product='HESSIOR1Calibrator',
-        extractor_product='NeighbourPeakIntegrator',
     )
 
 
@@ -120,10 +118,13 @@ def process_file(input_file, n_events=-1, silent=False, n_jobs=2):
     source.allowed_tels = allowed_tels
     
     event_iterator = filter(lambda e: len(e.dl0.tels_with_data) > 1, source)
+    
+    result = [process_parallel(event, calibrator) for event in tqdm(event_iterator)]
 
-    with Parallel(n_jobs=n_jobs, verbose=0, prefer='processes') as parallel:
-        p = parallel(delayed(partial(process_parallel, calibrator=calibrator))(copy.deepcopy(e)) for e in event_iterator)
-        result = [a for a in tqdm(p)]
+
+#    with Parallel(n_jobs=n_jobs, verbose=0, prefer='processes') as parallel:
+#        p = parallel(delayed(partial(process_parallel, calibrator=calibrator))(copy.deepcopy(e)) for e in event_iterator)
+#        result = [a for a in tqdm(p)]
     
     array_event_containers = [r[0] for r in result if r]
 
@@ -131,7 +132,12 @@ def process_file(input_file, n_events=-1, silent=False, n_jobs=2):
     nested_tel_events = [r[1] for r in result if r]
     telescope_event_containers = [item for sublist in nested_tel_events for item in sublist] 
     
-    mc_header_container = source.mc_header_information
+    source = SimTelEventSource(
+        input_url=input_file,
+        max_events=n_events if n_events > 1 else None,
+    )
+    event_b = next(iter(source)) 
+    mc_header_container = event_b.mcheader
     mc_header_container.prefix='mc'
     if len(array_event_containers) > 0:    
         run_info_container = RunInfoContainer(run_id=array_event_containers[0].run_id, mc=mc_header_container)
@@ -148,23 +154,23 @@ def calculate_image_features(telescope_id, event, dl1):
     boundary_thresh, picture_thresh, min_number_picture_neighbors = cleaning_level[camera.cam_id]
     mask = tailcuts_clean(
         camera,
-        dl1.image[0],
+        dl1.image,
         boundary_thresh=boundary_thresh,
         picture_thresh=picture_thresh,
         min_number_picture_neighbors=min_number_picture_neighbors
     )
 
     
-    cleaned = dl1.image[0].copy()
+    cleaned = dl1.image.copy()
     cleaned[~mask] = 0
     hillas_container = hillas_parameters(
         camera,
         cleaned,
     )
     hillas_container.prefix = ''
-    leakage_container = leakage(camera, dl1.image[0], mask)
+    leakage_container = leakage(camera, dl1.image, mask)
     leakage_container.prefix = ''
-    concentration_container = concentration(camera, dl1.image[0], hillas_container)
+    concentration_container = concentration(camera, dl1.image, hillas_container)
     concentration_container.prefix = ''
     
     alt_pointing = event.mc.tel[telescope_id].altitude_raw * u.rad
@@ -172,7 +178,8 @@ def calculate_image_features(telescope_id, event, dl1):
     pointing_container = TelescopePointingContainer(azimuth=az_pointing, altitude=alt_pointing, prefix='pointing')
 
     optics = event.inst.subarray.tels[telescope_id].optics
-    
+    #from IPython import embed; embed()
+    tel = event.inst.subarray.tels[telescope_id]
     return TelescopeParameterContainer(
         telescope_id=telescope_id,
         run_id=run_id,
@@ -181,7 +188,7 @@ def calculate_image_features(telescope_id, event, dl1):
         hillas=hillas_container,
         concentration=concentration_container,
         pointing=pointing_container,
-        telescope_type_id=telescope_types_to_id[optics.tel_type],
+        telescope_type_id=telescope_types_to_id[tel.type],
         camera_type_id=camera_names_to_id[camera.cam_id],
         focal_length=optics.equivalent_focal_length,
         mirror_area=optics.mirror_area,
@@ -203,16 +210,18 @@ def process_event(event, calibrator):
     Processes
     '''
 
-
     telescope_types = []
 
     hillas_reconstructor = HillasReconstructor()
 
-    calibrator.calibrate(event)
+    calibrator(event)
 
     telescope_event_containers = {}
     for telescope_id, dl1 in event.dl1.tel.items():
-        telescope_type_name = event.inst.subarray.tels[telescope_id].optics.tel_type
+        if telescope_id not in allowed_tels:
+            continue
+
+        telescope_type_name = event.inst.subarray.tels[telescope_id].type
         telescope_types.append(telescope_type_name)
 
         try:
@@ -227,9 +236,12 @@ def process_event(event, calibrator):
     parameters = {tel_id: telescope_event_containers[tel_id].hillas for tel_id in telescope_event_containers}
     pointing_altitude = {tel_id: telescope_event_containers[tel_id].pointing.altitude for tel_id in telescope_event_containers}
     pointing_azimuth = {tel_id: telescope_event_containers[tel_id].pointing.azimuth for tel_id in telescope_event_containers}
-
-    reconstruction_container = hillas_reconstructor.predict(parameters, event.inst, pointing_alt=pointing_altitude, pointing_az=pointing_azimuth )
-    reconstruction_container.prefix = ''
+    
+    try:
+        reconstruction_container = hillas_reconstructor.predict(parameters, event.inst, pointing_alt=pointing_altitude, pointing_az=pointing_azimuth )
+        reconstruction_container.prefix = ''
+    except InvalidWidthException:
+        raise ReconstructionError('Width')
     calculate_distance_to_core(telescope_event_containers, event, reconstruction_container)
     
     mc_container = copy.deepcopy(event.mc)
