@@ -24,8 +24,8 @@ from ctapipe.io.containers import  TelescopePointingContainer
 
 camera_names_to_id = {'LSTCam': 1, 'NectarCam': 2, 'FlashCam': 3, 'DigiCam': 4, 'CHEC': 5}
 telescope_types_to_id = {'LST': 1, 'MST': 2, 'SST': 3}
-allowed_cameras = ['LSTCam', 'NectarCam', 'DigiCam']
-
+# the hb9 layout. https://forge.in2p3.fr/issues/13807
+allowed_tels = [4, 5, 6, 11, 53, 54, 55, 56, 57, 60, 61, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 88, 89, 90, 91, 92, 93, 415, 416, 417, 418, 426, 427, 432, 433, 438, 439, 440, 441, 442, 443, 448, 449, 450, 451, 458, 459, 460, 461, 474, 475, 480, 481, 482, 483, 485, 486, 500, 501, 502, 503, 504, 505, 506, 507, 508, 509, 510, 511, 524, 525, 526, 527, 528, 529, 536, 537, 538, 539, 540, 541, 542, 543, 544, 545, 550, 551, 552, 553, 554, 555, 556, 557, 558, 559, 560, 561 ]
 
 cleaning_level = {
     # 'ASTRICam': (5, 7, 2),  # (5, 10)?
@@ -117,7 +117,6 @@ def process_file(input_file, n_events=-1, silent=False, n_jobs=2):
 
 
 
-    allowed_tels = [id for id in source._subarray_info.tels if source._subarray_info.tels[id].camera.cam_id in allowed_cameras]
     source.allowed_tels = allowed_tels
     
     event_iterator = filter(lambda e: len(e.dl0.tels_with_data) > 1, source)
