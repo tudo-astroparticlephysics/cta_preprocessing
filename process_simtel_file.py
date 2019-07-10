@@ -131,14 +131,24 @@ def process_file(input_file, n_events=-1, silent=False, n_jobs=2):
     # flatten according to https://stackoverflow.com/questions/952914/how-to-make-a-flat-list-out-of-list-of-lists
     nested_tel_events = [r[1] for r in result if r]
     telescope_event_containers = [item for sublist in nested_tel_events for item in sublist] 
+
+    try:
     
-    source = SimTelEventSource(
-        input_url=input_file,
-        max_events=n_events if n_events > 1 else None,
-    )
-    event_b = next(iter(source)) 
+        source_b = SimTelEventSource(
+            input_url=input_file,
+            max_events=1,
+        )
+        event_b = next(iter(source_b)) 
+    except (EOFError, StopIteration):
+        print(f'Could not produce eventsource. File might be truncated? {input_file}')
+        return None
+    
     mc_header_container = event_b.mcheader
     mc_header_container.prefix='mc'
+    
+    source.close()
+    source_b.close()
+    print('closed sources')
     if len(array_event_containers) > 0:    
         run_info_container = RunInfoContainer(run_id=array_event_containers[0].run_id, mc=mc_header_container)
         return run_info_container, array_event_containers, telescope_event_containers
