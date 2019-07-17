@@ -20,6 +20,7 @@ from ctapipe.image import leakage, concentration
 from ctapipe.image.cleaning import tailcuts_clean, fact_image_cleaning, number_of_islands
 from ctapipe.image.timing_parameters import timing_parameters
 from ctapipe.reco import HillasReconstructor
+from ctapipe.io.containers import ReconstructedShowerContainer
 
 from preprocessing.parameters import PREPConfig
 from preprocessing.containers import (
@@ -158,9 +159,11 @@ def process_file(input_file, config, n_jobs=1, n_events=-1, verbose=1):
         id
         for id in source._subarray_info.tels
         if source._subarray_info.tels[id].camera.cam_id in config.allowed_cameras
+        if id in config.allowed_ids
     ]
     source.allowed_tels = allowed_tels
     logging.info('Defined allowed telescopes')
+    logging.debug(f'allowed_tels: {allowed_tels}')
     
     # choose only events with at least one telescope
     event_iterator = filter(lambda e: len(e.dl0.tels_with_data) > 1, source)
@@ -339,10 +342,10 @@ def process_event(event, calibrator, config):
             )
             continue
 
-    if len(telescope_event_containers) < 2:
-        raise ReconstructionError(
-            f'Not enough telescopes for which Hillas parameters could be reconstructed for event {event.dl0.event_id}'
-        )
+    #if len(telescope_event_containers) < 2:
+        #raise ReconstructionError(
+        #    f'Not enough telescopes for which Hillas parameters could be reconstructed for event {event.dl0.event_id}'
+        #)
 
     parameters = {tel_id: telescope_event_containers[tel_id].hillas for tel_id in telescope_event_containers}
     pointing_altitude = {
@@ -359,10 +362,29 @@ def process_event(event, calibrator, config):
         reconstruction_container.prefix = ''
         calculate_distance_to_core(telescope_event_containers, event, reconstruction_container)
     except Exception as e:
-        raise ReconstructionError(
-            'Not enough telescopes for which Hillas parameters could be reconstructed for event {event.dl0.event_id}',
-            exc_info=True,
-        )
+        #raise ReconstructionError(
+        #    'Not enough telescopes for which Hillas parameters could be reconstructed for event {event.dl0.event_id}',
+        #    exc_info=True,
+        #)
+        logging.info('Not enough telescopes for which Hillas parameters could be reconstructed')
+        # fill the container with nans
+        reconstruction_container = ReconstructedShowerContainer()
+        reconstruction_container.alt = np.nan
+        reconstruction_container.alt_uncert = np.nan
+        reconstruction_container.az = np.nan
+        reconstruction_container.az_uncert = np.nan
+        reconstruction_container.core_x = np.nan
+        reconstruction_container.core_y = np.nan
+        reconstruction_container.core_uncert = np.nan
+        reconstruction_container.h_max = np.nan
+        reconstruction_container.h_max_uncert_uncert = np.nan
+        reconstruction_container.isValid = 'False'
+        reconstruction_container.tel_ids = []
+        reconstruction_container.average_intensity = np.nan
+        reconstruction_container.goodness_of_fit = np.nan
+        reconstruction_container.distance_to_reconstructed_core_position = np.nan
+        reconstruction_container.prefix = ''
+
     mc_container = copy.deepcopy(event.mc)
     mc_container.tel = None
     mc_container.prefix = 'mc'

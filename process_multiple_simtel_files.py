@@ -72,6 +72,7 @@ def main(
     - cleaning levels per telescope type
     to use.
     '''
+    print('Script from 09.07.2019')
     # defining the logger
     # workaround https://stackoverflow.com/questions/30861524/logging-basicconfig-not-creating-log-file-when-i-run-in-pycharm
     for handler in logging.root.handlers[:]:
@@ -117,7 +118,7 @@ def main(
     chunks = np.array_split(input_files, n_chunks)
     logging.debug(f'Splitted input_files in {n_chunks} chunks')
 #, prefer="threads" ??
-    with Parallel(n_jobs=n_jobs, verbose=verbose, backend='loky') as parallel:
+    with Parallel(n_jobs=n_jobs, verbose=verbose, backend='multiprocessing') as parallel:
         for chunk in tqdm(chunks):
             results = parallel(
                 delayed(process_file)(f, config, n_jobs=1, n_events=n_events, verbose=verbose) for f in chunk

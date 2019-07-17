@@ -6,6 +6,7 @@ class PREPConfig(object):
         'names_to_id',
         'types_to_id',
         'allowed_cameras',
+	'allowed_ids',
         'integrator',
         'cleaning_method',
         'cleaning_level',
