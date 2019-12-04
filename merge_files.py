@@ -66,8 +66,8 @@ def main(input_pattern, output_file, verify, n_jobs, chunk_size, hdf_format):
             sort_arrays_inplace(runs, array_events, telescope_events)
 
             fact.io.write_data(runs, output_file, key='runs', mode='a')
-            fact.io.write_data(array_events, output_file, key='array_events', mode='a')
             fact.io.write_data(telescope_events, output_file, key='telescope_events', mode='a')
+            fact.io.write_data(array_events, output_file, key='array_events', mode='a')
 
     if verify:
         verify_file(output_file, hdf_format)
@@ -116,5 +116,4 @@ def verify_file(input_file_path, format='tables'):
 
 
 if __name__ == '__main__':
-    # pylint: disable=no-value-for-parameter
     main()

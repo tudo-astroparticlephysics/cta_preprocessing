@@ -12,7 +12,7 @@ import os
 from joblib import delayed, Parallel
 
 from ctapipe.io.containers import TelescopePointingContainer, MCHeaderContainer
-from ctapipe.io.eventsource import EventSource, event_source
+from ctapipe.io.eventsource import event_source
 from ctapipe.io import HDF5TableWriter
 from ctapipe.calib import CameraCalibrator
 from ctapipe.image.hillas import hillas_parameters, HillasParameterizationError
@@ -21,6 +21,8 @@ from ctapipe.image.cleaning import tailcuts_clean, fact_image_cleaning, number_o
 from ctapipe.image.timing_parameters import timing_parameters
 from ctapipe.reco import HillasReconstructor
 from ctapipe.io.containers import ReconstructedShowerContainer
+
+from astropy.coordinates import SkyCoord, AltAz
 
 from preprocessing.parameters import PREPConfig
 from preprocessing.containers import (
@@ -108,8 +110,7 @@ def write_result_to_file(run_info_container, array_events, telescope_events, out
     '''
     logging.info(f'writing to file {output_file}')
     with HDF5TableWriter(output_file, mode=mode, group_name='', add_prefix=True) as h5_table:
-        run_info_container.mc['run_array_direction'] = 0  # .run_array... für container
-
+        run_info_container.mc['run_array_direction'] = 0
         h5_table.write('runs', [run_info_container, run_info_container.mc])
         for array_event in array_events:
             h5_table.write('array_events', [array_event, array_event.mc, array_event.reco])
@@ -144,31 +145,23 @@ def process_file(input_file, config, n_jobs=1, n_events=-1, verbose=1):
     - Event processing is handled in process_event, mc header is handled in get_mc_header - 
     '''
     logging.info(f'processing file {input_file} in parallel with {n_jobs} jobs')
+    allowed_tels = config.allowed_ids
     try:
-        source = event_source(input_url=input_file, max_events=n_events if n_events > 1 else None)
+        source = event_source(
+            input_url=input_file, max_events=n_events if n_events > 1 else None, allowed_tels=allowed_tels
+        )
     except (EOFError, StopIteration):
         logging.error(f'Could not produce eventsource. File might be truncated? {input_file}', exc_info=True)
         return None
     except Exception:
         logging.critical('Unhandled error trying to get the event source', exc_info=True)
     calibrator = CameraCalibrator()
-    #    eventsource=source, r1_product='HESSIOR1Calibrator', extractor_name=config.integrator
-    #)## can remove r1 product and eventsource?
 
-    allowed_tels = [
-        id
-        for id in source._subarray_info.tels
-        if source._subarray_info.tels[id].camera.cam_id in config.allowed_cameras
-        if id in config.allowed_ids
-    ]
-    source.allowed_tels = allowed_tels
-    logging.info('Defined allowed telescopes')
-    logging.debug(f'allowed_tels: {allowed_tels}')
-    
+    logging.info(f'Defined allowed telescopes to {source.allowed_tels}')
+
     # choose only events with at least one telescope
     event_iterator = filter(lambda e: len(e.dl0.tels_with_data) > 1, source)
 
-    #with Parallel(n_jobs=n_jobs, verbose=verbose, prefer='processes') as parallel:
     with Parallel(n_jobs=n_jobs, verbose=verbose, backend='loky') as parallel:
         p = parallel(
             delayed(partial(process_parallel, calibrator=calibrator, config=config))(copy.deepcopy(e))
@@ -182,11 +175,9 @@ def process_file(input_file, config, n_jobs=1, n_events=-1, verbose=1):
     # flatten according to https://stackoverflow.com/questions/952914
     telescope_event_containers = [item for sublist in nested_tel_events for item in sublist]
 
-    ## super hacky, change this pls (problem with forward vs backseeking bc all events are processed already)
+    ## super hacky, im sorry (necessary because our iterator is exhausted)
     mc_header_container = None
-    mc_source = event_source(
-        input_url=input_file,
-        max_events=1)
+    mc_source = event_source(input_url=input_file, max_events=1)
     try:
         mc_header_container = get_mc_header(mc_source)
         mc_header_container.prefix = 'mc'
@@ -195,7 +186,6 @@ def process_file(input_file, config, n_jobs=1, n_events=-1, verbose=1):
         logging.error(f'Could not get mc header for file {input_file}', exc_info=True)
         raise
 
-    # run_info_container = RunInfoContainer(run_id=array_event_containers[0].run_id, mc=mc_header_container)
     if len(array_event_containers) > 0:
         logging.debug('array event container seems valid. returning containers')
         run_info_container = RunInfoContainer(run_id=array_event_containers[0].run_id, mc=mc_header_container)
@@ -218,10 +208,15 @@ def calculate_image_features(telescope_id, event, dl1, config):
         picture_thresh, picture_thresh, min_number_picture_neighbors
     - fact_image_cleaning:
         picture_threshold, boundary_threshold, min_number_neighbors, time_limit
+    
+    Returns:
+    --------
+    TelescopeParameterContainer
     '''
     array_event_id = event.dl0.event_id
     run_id = event.r0.obs_id
     telescope = event.inst.subarray.tels[telescope_id]
+    image = dl1.image
 
     # might want to make the parameter names more consistent between methods
     if config.cleaning_method == 'tailcuts_clean':
@@ -230,7 +225,7 @@ def calculate_image_features(telescope_id, event, dl1, config):
         ]
         mask = tailcuts_clean(
             telescope.camera,
-            dl1.image[0],
+            image,
             boundary_thresh=boundary_thresh,
             picture_thresh=picture_thresh,
             min_number_picture_neighbors=min_number_picture_neighbors,
@@ -241,30 +236,31 @@ def calculate_image_features(telescope_id, event, dl1, config):
         ]
         mask = fact_image_cleaning(
             telescope.camera,
-            dl1.image[0],
-            dl1.pulse_time[0],
+            image,
+            dl1.pulse_time,
             boundary_threshhold=boundary_threshold,
             picture_threshold=picture_threshold,
             min_number_neighbors=min_number_neighbors,
             time_limit=time_limit,
         )
 
-    cleaned = dl1.image[0].copy()
+    cleaned = image.copy()
     cleaned[~mask] = 0
     logging.debug(f'calculating hillas for event {array_event_id, telescope_id}')
     hillas_container = hillas_parameters(telescope.camera, cleaned)
     hillas_container.prefix = ''
     logging.debug(f'calculating leakage for event {array_event_id, telescope_id}')
-    leakage_container = leakage(telescope.camera, dl1.image[0], mask)
+    leakage_container = leakage(telescope.camera, image, mask)
     leakage_container.prefix = ''
     logging.debug(f'calculating concentration for event {array_event_id, telescope_id}')
-    concentration_container = concentration(telescope.camera, dl1.image[0], hillas_container)
+    concentration_container = concentration(telescope.camera, image, hillas_container)
     concentration_container.prefix = ''
     logging.debug(f'getting timing information for event {array_event_id, telescope_id}')
-    timing_container = timing_parameters(telescope.camera, dl1.image[0], dl1.pulse_time[0], hillas_container)
+    timing_container = timing_parameters(telescope.camera, image, dl1.pulse_time, hillas_container)
     timing_container.prefix = ''
+
     # membership missing for now as it causes problems with the hdf5tablewriter
-    # probably useless for ML purposes anyway?
+    # right now i dont need this anyway
     logging.debug(f'calculating num_islands for event {array_event_id, telescope_id}')
     num_islands, membership = number_of_islands(telescope.camera, mask)
     island_container = IslandContainer(num_islands=num_islands)
@@ -272,6 +268,7 @@ def calculate_image_features(telescope_id, event, dl1, config):
     num_pixel_in_shower = mask.sum()
 
     logging.debug(f'getting pointing container for event {array_event_id, telescope_id}')
+
     # ctapipe requires this to be rad
     pointing_container = TelescopePointingContainer(
         azimuth=event.mc.tel[telescope_id].azimuth_raw * u.rad,
@@ -293,97 +290,110 @@ def calculate_image_features(telescope_id, event, dl1, config):
         camera_type_id=config.names_to_id[telescope.camera.cam_id],
         focal_length=telescope.optics.equivalent_focal_length,
         mirror_area=telescope.optics.mirror_area,
-        num_pixel_in_shower = num_pixel_in_shower,
+        num_pixel_in_shower=num_pixel_in_shower,
     )
 
 
-
-
-
 def calculate_distance_to_core(tel_params, event, reconstruction_result):
-    'Calculates distance to reconstructed core position for one event.'
+    'Calculates distance to reconstructed core position for one event filling the provided container'
     for tel_id, container in tel_params.items():
-        pos = event.inst.subarray.positions[tel_id]
-        x, y = pos[0], pos[1]
-        core_x = reconstruction_result.core_x
-        core_y = reconstruction_result.core_y
-        d = np.sqrt((core_x - x) ** 2 + (core_y - y) ** 2)
+        try:
+            pos = event.inst.subarray.positions[tel_id]
+            x, y = pos[0], pos[1]
+            core_x = reconstruction_result.core_x
+            core_y = reconstruction_result.core_y
+            d = np.sqrt((core_x - x) ** 2 + (core_y - y) ** 2)
 
-        container.distance_to_reconstructed_core_position = d
+            container.distance_to_reconstructed_core_position = d
+        except Exception:
+            container.distance_to_reconstructed_core_position = np.nan
+            logging.info('No properly reconstructed distance for tel_id %s', tel_id)
 
 
 def process_event(event, calibrator, config):
     '''Processes one event.
     Calls calculate_image_features and performs a stereo hillas reconstruction.
-    '''
-    logging.info(f'processing event {event.dl0.event_id}')
-    telescope_types = []
+    ReconstructedShowerContainer will be filled with nans (+units) if hillas failed.
 
-    hillas_reconstructor = HillasReconstructor()
+    Returns:
+    --------
+    ArrayEventContainer
+    list(telescope_event_containers.values())
+    '''
+
+    logging.info(f'processing event {event.dl0.event_id}')
     calibrator(event)
-    
+
+    telescope_types = []
+    hillas_reconstructor = HillasReconstructor()
     telescope_event_containers = {}
+    horizon_frame = AltAz()
+    telescope_pointings = {}
+    array_pointing = SkyCoord(
+        az=event.mcheader.run_array_direction[0],
+        alt=event.mcheader.run_array_direction[1],
+        frame=horizon_frame,
+    )
+
     for telescope_id, dl1 in event.dl1.tel.items():
+        cam_type = event.inst.subarray.tels[telescope_id].camera.cam_id
+        if cam_type not in config.cleaning_level.keys():
+            logging.info(f"No cleaning levels for camera {cam_type}. Skipping event")
+            continue
         telescope_types.append(str(event.inst.subarray.tels[telescope_id].optics))
         try:
             telescope_event_containers[telescope_id] = calculate_image_features(
                 telescope_id, event, dl1, config
             )
         except HillasParameterizationError:
-            logging.warning(
+            logging.info(
                 f'Error calculating hillas features for event {event.dl0.event_id, telescope_id}',
                 exc_info=True,
             )
             continue
         except Exception:
-            logging.error(
+            logging.info(
                 f'Error calculating image features for event {event.dl0.event_id, telescope_id}',
                 exc_info=True,
             )
             continue
+        telescope_pointings[telescope_id] = SkyCoord(
+            alt=telescope_event_containers[telescope_id].pointing.altitude,
+            az=telescope_event_containers[telescope_id].pointing.azimuth,
+            frame=horizon_frame,
+        )
 
-    #if len(telescope_event_containers) < 2:
-        #raise ReconstructionError(
-        #    f'Not enough telescopes for which Hillas parameters could be reconstructed for event {event.dl0.event_id}'
-        #)
+    if len(telescope_event_containers) < 1:
+        raise Exception('None of the allowed telescopes triggered for event %s', event.dl0.event_id)
 
     parameters = {tel_id: telescope_event_containers[tel_id].hillas for tel_id in telescope_event_containers}
-    pointing_altitude = {
-        tel_id: telescope_event_containers[tel_id].pointing.altitude for tel_id in telescope_event_containers
-    }
-    pointing_azimuth = {
-        tel_id: telescope_event_containers[tel_id].pointing.azimuth for tel_id in telescope_event_containers
-    }
 
     try:
         reconstruction_container = hillas_reconstructor.predict(
-            parameters, event.inst, pointing_alt=pointing_altitude, pointing_az=pointing_azimuth
+            parameters, event.inst, array_pointing, telescopes_pointings=telescope_pointings
         )
         reconstruction_container.prefix = ''
-        calculate_distance_to_core(telescope_event_containers, event, reconstruction_container)
-    except Exception as e:
-        #raise ReconstructionError(
-        #    'Not enough telescopes for which Hillas parameters could be reconstructed for event {event.dl0.event_id}',
-        #    exc_info=True,
-        #)
-        logging.info('Not enough telescopes for which Hillas parameters could be reconstructed')
-        # fill the container with nans
+    except Exception:
+        logging.info(
+            'Not enough telescopes for which Hillas parameters could be reconstructed', exc_info=True
+        )
         reconstruction_container = ReconstructedShowerContainer()
-        reconstruction_container.alt = np.nan
-        reconstruction_container.alt_uncert = np.nan
-        reconstruction_container.az = np.nan
+        reconstruction_container.alt = u.Quantity(np.nan, u.rad)
+        reconstruction_container.alt_uncert = u.Quantity(np.nan, u.rad)
+        reconstruction_container.az = u.Quantity(np.nan, u.rad)
         reconstruction_container.az_uncert = np.nan
-        reconstruction_container.core_x = np.nan
-        reconstruction_container.core_y = np.nan
+        reconstruction_container.core_x = u.Quantity(np.nan, u.m)
+        reconstruction_container.core_y = u.Quantity(np.nan, u.m)
         reconstruction_container.core_uncert = np.nan
-        reconstruction_container.h_max = np.nan
-        reconstruction_container.h_max_uncert_uncert = np.nan
-        reconstruction_container.isValid = 'False'
+        reconstruction_container.h_max = u.Quantity(np.nan, u.m)
+        reconstruction_container.h_max_uncert = np.nan
+        reconstruction_container.is_valid = False
         reconstruction_container.tel_ids = []
         reconstruction_container.average_intensity = np.nan
         reconstruction_container.goodness_of_fit = np.nan
-        reconstruction_container.distance_to_reconstructed_core_position = np.nan
         reconstruction_container.prefix = ''
+
+    calculate_distance_to_core(telescope_event_containers, event, reconstruction_container)
 
     mc_container = copy.deepcopy(event.mc)
     mc_container.tel = None
@@ -406,11 +416,13 @@ def process_event(event, calibrator, config):
 
 
 def get_mc_header(event_source):
-    'returns a mc header from a simtel event source taking the header of the last event'
+    'Returns a mc header from a simtel event source taking the header of the last event'
+
+    # yes, this is dirty
     for last_event in event_source:
         pass
     mc_header_container = MCHeaderContainer()
-    mc_header_container.update(**last_event.mcheader)  ### add warnings if value is missing?
+    mc_header_container.update(**last_event.mcheader)
 
     return mc_header_container
 

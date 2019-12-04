@@ -1,14 +1,11 @@
 import os
 import glob
-
 import click
 import numpy as np
 from tqdm import tqdm
 from joblib import delayed, Parallel
 from process_simtel_file import process_file, write_result_to_file
 from preprocessing.parameters import PREPConfig
-from colorama import Fore, Style
-from pathlib import Path
 import logging
 from logging.config import dictConfig
 import yaml
@@ -72,14 +69,10 @@ def main(
     - cleaning levels per telescope type
     to use.
     '''
-    print('Script from 09.07.2019')
-    # defining the logger
     # workaround https://stackoverflow.com/questions/30861524/logging-basicconfig-not-creating-log-file-when-i-run-in-pycharm
     for handler in logging.root.handlers[:]:
         logging.root.removeHandler(handler)
-    # everything uses the root logger right now
-    # might want to use loggers per function? need to use the config everytime tho... or pass the logger object?
-    # logger = logging.getLogger(__name__)
+
     try:
         with open(logger_config_file, 'rb') as f:
             config = yaml.safe_load(f)
@@ -117,12 +110,12 @@ def main(
     n_chunks = (len(input_files) // chunksize) + 1
     chunks = np.array_split(input_files, n_chunks)
     logging.debug(f'Splitted input_files in {n_chunks} chunks')
-#, prefer="threads" ??
-    with Parallel(n_jobs=n_jobs, verbose=verbose, backend='multiprocessing') as parallel:
+
+    with Parallel(n_jobs=n_jobs, verbose=verbose, backend='loky') as parallel:
         for chunk in tqdm(chunks):
             results = parallel(
                 delayed(process_file)(f, config, n_jobs=1, n_events=n_events, verbose=verbose) for f in chunk
-            )  # 1 because kai
+            )  # 1 because multiple threads on one file did not perform well at all
             if len(results) != len(chunk):
                 logging.error('One or more files failed to process in this chunk.')
 
