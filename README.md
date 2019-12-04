@@ -1,6 +1,7 @@
 # cta_preprocessing
 
 Currently tested on ctapipe commit 63fe206b1d603b0fff61486b6d0c18f73ef4e321 (17.07.2019).
+
 https://github.com/cta-observatory/ctapipe/commit/63fe206b1d603b0fff61486b6d0c18f73ef4e321
 
 ## About
